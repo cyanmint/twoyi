@@ -2,8 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use libc::*;
-use libc::{c_char, c_int};
+use libc::{c_char, c_int, clock_gettime, timeval, CLOCK_MONOTONIC};
 use ndk::event::{MotionAction, MotionEvent};
 use std::mem;
 use std::thread;
