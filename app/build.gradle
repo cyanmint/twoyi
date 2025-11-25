@@ -68,13 +68,13 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
 
-    implementation 'com.github.nicourga:FreeReflection:3.2.0'
+    implementation 'com.github.tiann:FreeReflection:3.1.0'
 
     def libsuVersion = '5.2.2'
     implementation "com.github.topjohnwu.libsu:core:${libsuVersion}"
 
     // AboutPage
-    implementation 'io.github.nicourga:android-about-page:2.0.2'
+    implementation 'com.github.medyo:android-about-page:1.2.4'
     implementation 'de.psdev.licensesdialog:licensesdialog:2.2.0'
     implementation 'com.afollestad.material-dialogs:core:0.9.6.0'
     implementation 'moe.feng:AlipayZeroSdk:1.1'
