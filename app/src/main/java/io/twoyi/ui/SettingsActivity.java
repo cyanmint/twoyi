@@ -42,6 +42,7 @@ import java.nio.file.Files;
 
 import io.twoyi.R;
 import io.twoyi.Render2Activity;
+import io.twoyi.RemoteRenderActivity;
 import io.twoyi.utils.AppKV;
 import io.twoyi.utils.LogEvents;
 import io.twoyi.utils.RomManager;
@@ -282,8 +283,8 @@ public class SettingsActivity extends AppCompatActivity {
                         dialog.dismiss();
                         Toast.makeText(activity, R.string.server_started, Toast.LENGTH_SHORT).show();
 
-                        // Launch the renderer activity
-                        Intent intent = new Intent(activity, Render2Activity.class);
+                        // Launch the remote renderer activity
+                        Intent intent = new Intent(activity, RemoteRenderActivity.class);
                         intent.putExtra("server_address", address);
                         startActivity(intent);
                     });
@@ -312,8 +313,8 @@ public class SettingsActivity extends AppCompatActivity {
                     if (connected) {
                         Toast.makeText(activity, R.string.server_connected, Toast.LENGTH_SHORT).show();
 
-                        // Launch the renderer activity
-                        Intent intent = new Intent(activity, Render2Activity.class);
+                        // Launch the remote renderer activity
+                        Intent intent = new Intent(activity, RemoteRenderActivity.class);
                         intent.putExtra("server_address", address);
                         startActivity(intent);
                     } else {

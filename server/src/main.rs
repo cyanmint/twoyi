@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use clap::Parser;
-use log::{info, error};
+use log::{info, error, debug};
 use std::fs::File;
 use std::io::{Write, BufReader, BufRead};
 use std::net::{TcpListener, TcpStream};
@@ -23,8 +23,12 @@ struct Args {
     #[arg(short, long)]
     rootfs: PathBuf,
 
+    /// Path to the loader library (libloader.so)
+    #[arg(short, long)]
+    loader: Option<PathBuf>,
+
     /// Address and port to bind on (e.g., 0.0.0.0:8765)
-    #[arg(short, long, default_value = "0.0.0.0:8765")]
+    #[arg(short = 'a', long, default_value = "0.0.0.0:8765")]
     bind: String,
 
     /// Screen width
@@ -34,17 +38,29 @@ struct Args {
     /// Screen height
     #[arg(long, default_value_t = 1920)]
     height: i32,
+
+    /// Verbose mode - show container output in real-time
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
     let args = Args::parse();
+    
+    // Set log level based on verbose flag
+    let log_level = if args.verbose { "debug" } else { "info" };
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(log_level)).init();
 
     info!("twoyi-server starting...");
     info!("Rootfs: {:?}", args.rootfs);
     info!("Bind address: {}", args.bind);
     info!("Screen size: {}x{}", args.width, args.height);
+    if args.verbose {
+        info!("Verbose mode: enabled");
+    }
+    if let Some(ref loader) = args.loader {
+        info!("Loader: {:?}", loader);
+    }
 
     // Validate rootfs exists
     if !args.rootfs.exists() {
@@ -67,8 +83,10 @@ fn main() {
     let container_running_clone = container_running.clone();
     
     let rootfs_clone = args.rootfs.clone();
+    let loader_clone = args.loader.clone();
+    let verbose = args.verbose;
     thread::spawn(move || {
-        start_container(&rootfs_clone);
+        start_container(&rootfs_clone, loader_clone.as_ref(), verbose);
         container_running_clone.store(false, Ordering::SeqCst);
     });
 
@@ -100,38 +118,93 @@ fn main() {
     }
 }
 
-fn start_container(rootfs: &PathBuf) {
+fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool) {
     let working_dir = rootfs.to_string_lossy().to_string();
     let log_path = rootfs.parent()
         .map(|p| p.join("log.txt"))
         .unwrap_or_else(|| PathBuf::from("/tmp/twoyi_log.txt"));
     
     info!("Starting container in {}", working_dir);
+    info!("Container log file: {:?}", log_path);
     
-    let outputs = match File::create(&log_path) {
-        Ok(f) => f,
-        Err(e) => {
-            error!("Failed to create log file: {}", e);
-            return;
-        }
-    };
-    let errors = match outputs.try_clone() {
-        Ok(f) => f,
-        Err(e) => {
-            error!("Failed to clone log file handle: {}", e);
-            return;
-        }
-    };
+    let mut cmd = Command::new("./init");
+    cmd.current_dir(&working_dir);
     
-    let result = Command::new("./init")
-        .current_dir(&working_dir)
-        .stdout(Stdio::from(outputs))
-        .stderr(Stdio::from(errors))
-        .spawn();
+    // Set TYLOADER environment variable if loader path is provided
+    if let Some(loader_path) = loader {
+        let loader_str = loader_path.to_string_lossy().to_string();
+        info!("Setting TYLOADER={}", loader_str);
+        cmd.env("TYLOADER", loader_str);
+    }
+    
+    if verbose {
+        // In verbose mode, pipe stdout/stderr so we can log them
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+    } else {
+        // In normal mode, redirect to log file
+        let outputs = match File::create(&log_path) {
+            Ok(f) => f,
+            Err(e) => {
+                error!("Failed to create log file: {}", e);
+                return;
+            }
+        };
+        let errors = match outputs.try_clone() {
+            Ok(f) => f,
+            Err(e) => {
+                error!("Failed to clone log file handle: {}", e);
+                return;
+            }
+        };
+        cmd.stdout(Stdio::from(outputs));
+        cmd.stderr(Stdio::from(errors));
+    }
+    
+    let result = cmd.spawn();
     
     match result {
         Ok(mut child) => {
             info!("Container process started with PID: {:?}", child.id());
+            
+            if verbose {
+                // In verbose mode, read and log stdout/stderr in real-time
+                let stdout = child.stdout.take();
+                let stderr = child.stderr.take();
+                
+                // Spawn thread to read stdout
+                if let Some(stdout) = stdout {
+                    thread::spawn(move || {
+                        let reader = BufReader::new(stdout);
+                        for line in reader.lines() {
+                            match line {
+                                Ok(line) => info!("[container stdout] {}", line),
+                                Err(e) => {
+                                    debug!("Error reading container stdout: {}", e);
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                // Spawn thread to read stderr
+                if let Some(stderr) = stderr {
+                    thread::spawn(move || {
+                        let reader = BufReader::new(stderr);
+                        for line in reader.lines() {
+                            match line {
+                                Ok(line) => info!("[container stderr] {}", line),
+                                Err(e) => {
+                                    debug!("Error reading container stderr: {}", e);
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            
             match child.wait() {
                 Ok(status) => info!("Container exited with status: {}", status),
                 Err(e) => error!("Error waiting for container: {}", e),
