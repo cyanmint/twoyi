@@ -42,20 +42,21 @@ twoyi-server --rootfs <PATH_TO_ROOTFS> [OPTIONS]
 - `--width <WIDTH>` - Screen width (default: 1080)
 - `--height <HEIGHT>` - Screen height (default: 1920)
 - `--extract-rootfs <PATH>` - Extract rootfs from a .7z archive before starting
+- `--loader <PATH>` - Path to libloader.so (required for container to communicate with host)
 - `-h, --help` - Print help
 - `-V, --version` - Print version
 
 ### Examples
 
 ```bash
-# Start server with default settings
-twoyi-server --rootfs /path/to/rootfs
+# Start server with loader library
+twoyi-server --rootfs /path/to/rootfs --loader /path/to/libloader.so
 
 # Start server on a specific address and port
-twoyi-server --rootfs /path/to/rootfs --listen 192.168.1.100:9876 --width 720 --height 1280
+twoyi-server --rootfs /path/to/rootfs --loader /path/to/libloader.so --listen 192.168.1.100:9876 --width 720 --height 1280
 
 # Extract rootfs from archive and start server
-twoyi-server --rootfs /path/to/rootfs --extract-rootfs /path/to/rootfs.7z
+twoyi-server --rootfs /path/to/rootfs --loader /path/to/libloader.so --extract-rootfs /path/to/rootfs.7z
 ```
 
 ## Running on Termux
@@ -63,14 +64,22 @@ twoyi-server --rootfs /path/to/rootfs --extract-rootfs /path/to/rootfs.7z
 The server binary is built for Android and can run directly on Termux:
 
 ```bash
-# Copy the binary to Termux
+# Copy the binary and loader to Termux
 cp twoyi-server /data/data/com.termux/files/home/
+cp libloader.so /data/data/com.termux/files/home/
 
-# Make it executable
+# Make them executable
 chmod +x twoyi-server
 
 # Extract rootfs and start the server
-./twoyi-server --rootfs ./rootfs --extract-rootfs ./rootfs.7z --listen 127.0.0.1:9876
+./twoyi-server --rootfs ./rootfs --loader ./libloader.so --extract-rootfs ./rootfs.7z --listen 127.0.0.1:9876
+```
+
+Note: The `libloader.so` library is required for the container to work properly. You can extract it from the twoyi APK:
+
+```bash
+unzip twoyi.apk -d apk_contents
+cp apk_contents/lib/arm64-v8a/libloader.so ./
 ```
 
 ## Protocol

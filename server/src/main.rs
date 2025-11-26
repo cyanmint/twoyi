@@ -42,6 +42,11 @@ struct Args {
     /// If specified, the rootfs.7z will be extracted to the rootfs directory
     #[arg(long)]
     extract_rootfs: Option<PathBuf>,
+
+    /// Path to the loader library (libloader.so)
+    /// This is required for the container to communicate with the host
+    #[arg(long)]
+    loader: Option<PathBuf>,
 }
 
 static CONTAINER_STARTED: AtomicBool = AtomicBool::new(false);
@@ -65,7 +70,7 @@ fn extract_rootfs(archive_path: &PathBuf, target_dir: &PathBuf) -> Result<(), St
     Ok(())
 }
 
-fn start_container(rootfs: &PathBuf, width: i32, height: i32) -> Result<(), String> {
+fn start_container(rootfs: &PathBuf, width: i32, height: i32, loader: &Option<PathBuf>) -> Result<(), String> {
     if CONTAINER_STARTED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
         return Err("Container already started".to_string());
     }
@@ -81,11 +86,20 @@ fn start_container(rootfs: &PathBuf, width: i32, height: i32) -> Result<(), Stri
     let errors = outputs.try_clone().map_err(|e| format!("Failed to clone log file: {}", e))?;
     
     info!("Spawning init process...");
-    let result = Command::new("./init")
-        .current_dir(&working_dir)
-        .stdout(Stdio::from(outputs))
-        .stderr(Stdio::from(errors))
-        .spawn();
+    
+    let mut cmd = Command::new("./init");
+    cmd.current_dir(&working_dir)
+       .stdout(Stdio::from(outputs))
+       .stderr(Stdio::from(errors));
+    
+    // Set TYLOADER environment variable if loader is specified
+    if let Some(loader_path) = loader {
+        let loader_str = loader_path.to_string_lossy().to_string();
+        info!("Setting TYLOADER={}", loader_str);
+        cmd.env("TYLOADER", loader_str);
+    }
+    
+    let result = cmd.spawn();
 
     match result {
         Ok(child) => {
@@ -107,7 +121,7 @@ fn start_container(rootfs: &PathBuf, width: i32, height: i32) -> Result<(), Stri
     }
 }
 
-fn handle_client(mut stream: TcpStream, rootfs: Arc<PathBuf>, width: i32, height: i32) {
+fn handle_client(mut stream: TcpStream, rootfs: Arc<PathBuf>, width: i32, height: i32, loader: Arc<Option<PathBuf>>) {
     let peer_addr = stream.peer_addr().ok();
     info!("Client connected: {:?}", peer_addr);
 
@@ -127,7 +141,7 @@ fn handle_client(mut stream: TcpStream, rootfs: Arc<PathBuf>, width: i32, height
 
                 match serde_json::from_str::<ClientMessage>(line) {
                     Ok(msg) => {
-                        let response = handle_message(msg, &rootfs, width, height);
+                        let response = handle_message(msg, &rootfs, width, height, &loader);
                         let response_str = serde_json::to_string(&response).unwrap() + "\n";
                         if let Err(e) = stream.write_all(response_str.as_bytes()) {
                             error!("Failed to send response: {}", e);
@@ -152,10 +166,10 @@ fn handle_client(mut stream: TcpStream, rootfs: Arc<PathBuf>, width: i32, height
     }
 }
 
-fn handle_message(msg: ClientMessage, rootfs: &PathBuf, width: i32, height: i32) -> ServerMessage {
+fn handle_message(msg: ClientMessage, rootfs: &PathBuf, width: i32, height: i32, loader: &Option<PathBuf>) -> ServerMessage {
     match msg {
         ClientMessage::StartContainer => {
-            match start_container(rootfs, width, height) {
+            match start_container(rootfs, width, height, loader) {
                 Ok(()) => ServerMessage::ContainerStarted,
                 Err(e) => ServerMessage::Error { message: e },
             }
@@ -189,6 +203,9 @@ fn main() {
     info!("Rootfs path: {:?}", args.rootfs);
     info!("Listen address: {}", args.listen);
     info!("Screen size: {}x{}", args.width, args.height);
+    if let Some(ref loader) = args.loader {
+        info!("Loader path: {:?}", loader);
+    }
 
     // Extract rootfs if requested
     if let Some(archive_path) = &args.extract_rootfs {
@@ -211,6 +228,14 @@ fn main() {
         std::process::exit(1);
     }
 
+    // Validate loader path if specified
+    if let Some(ref loader) = args.loader {
+        if !loader.exists() {
+            error!("Loader library not found: {:?}", loader);
+            std::process::exit(1);
+        }
+    }
+
     // Ensure required directories exist
     let dev_dir = args.rootfs.join("dev");
     let _ = std::fs::create_dir_all(dev_dir.join("input"));
@@ -221,6 +246,7 @@ fn main() {
     info!("Server listening on {}", args.listen);
 
     let rootfs = Arc::new(args.rootfs.clone());
+    let loader = Arc::new(args.loader.clone());
     let width = args.width;
     let height = args.height;
 
@@ -228,8 +254,9 @@ fn main() {
         match stream {
             Ok(stream) => {
                 let rootfs = Arc::clone(&rootfs);
+                let loader = Arc::clone(&loader);
                 thread::spawn(move || {
-                    handle_client(stream, rootfs, width, height);
+                    handle_client(stream, rootfs, width, height, loader);
                 });
             }
             Err(e) => {
