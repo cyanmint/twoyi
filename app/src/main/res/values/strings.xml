@@ -109,4 +109,5 @@
     <string name="connecting_to_server">Connecting to server...</string>
     <string name="connection_failed">Connection failed: %1$s</string>
     <string name="connection_success">Connected to server</string>
+    <string name="remote_mode_connected">Connected to %1$s\n\nRemote mode: The container is running on the server.\nTouch and key events are forwarded to the server.\n\nNote: Display output is only available on the server device.</string>
 </resources>

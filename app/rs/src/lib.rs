@@ -47,75 +47,6 @@ pub fn renderer_init(
     ydpi: jfloat,
     fps: jint,
 ) {
-    renderer_init_internal(env, _clz, surface, loader, xdpi, ydpi, fps, true);
-}
-
-#[no_mangle]
-pub fn renderer_init_display_only(
-    env: JNIEnv,
-    _clz: jclass,
-    surface: jobject,
-    xdpi: jfloat,
-    ydpi: jfloat,
-    fps: jint,
-) {
-    debug!("renderer_init_display_only");
-    let window = unsafe { ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface) };
-
-    let window = match std::ptr::NonNull::new(window) {
-        Some(x) => x,
-        None => {
-            error!("ANativeWindow_fromSurface was null!");
-            return;
-        }
-    };
-
-    let window = unsafe { ndk::native_window::NativeWindow::from_ptr(window) };
-
-    let width = window.width();
-    let height = window.height();
-
-    info!(
-        "renderer_init_display_only width: {}, height: {}, fps: {}",
-        width, height, fps
-    );
-
-    if RENDERER_STARTED.compare_exchange(false, true, 
-        Ordering::Acquire, Ordering::Relaxed).is_err() {
-        let win = window.ptr().as_ptr() as *mut c_void;
-        unsafe {
-            renderer_bindings::setNativeWindow(win);
-            renderer_bindings::resetSubWindow(win, 0, 0, width, height, width, height, 1.0, 0.0);
-        }
-    } else {
-        // Only start the OpenGL renderer, no input system or container init
-        thread::spawn(move || {
-            let win = window.ptr().as_ptr() as *mut c_void;
-            info!("win: {:#?}", win);
-            unsafe {
-                renderer_bindings::startOpenGLRenderer(
-                    win,
-                    width,
-                    height,
-                    xdpi as i32,
-                    ydpi as i32,
-                    fps as i32,
-                );
-            }
-        });
-    }
-}
-
-fn renderer_init_internal(
-    env: JNIEnv,
-    _clz: jclass,
-    surface: jobject,
-    loader: jstring,
-    xdpi: jfloat,
-    ydpi: jfloat,
-    fps: jint,
-    spawn_init: bool,
-) {
     debug!("renderer_init");
     let window = unsafe { ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface) };
 
@@ -162,19 +93,17 @@ fn renderer_init_internal(
             }
         });
 
-        if spawn_init {
-            let loader_path: String = env.get_string(loader.into()).unwrap().into();
-            let working_dir = "/data/data/io.twoyi/rootfs";
-            let log_path = "/data/data/io.twoyi/log.txt";
-            let outputs = File::create(log_path).unwrap();
-            let errors = outputs.try_clone().unwrap();
-            let _ = Command::new("./init")
-                .current_dir(working_dir)
-                .env("TYLOADER", loader_path)
-                .stdout(Stdio::from(outputs))
-                .stderr(Stdio::from(errors))
-                .spawn();
-        }
+        let loader_path: String = env.get_string(loader.into()).unwrap().into();
+        let working_dir = "/data/data/io.twoyi/rootfs";
+        let log_path = "/data/data/io.twoyi/log.txt";
+        let outputs = File::create(log_path).unwrap();
+        let errors = outputs.try_clone().unwrap();
+        let _ = Command::new("./init")
+            .current_dir(working_dir)
+            .env("TYLOADER", loader_path)
+            .stdout(Stdio::from(outputs))
+            .stderr(Stdio::from(errors))
+            .spawn();
     }
 }
 
@@ -267,7 +196,6 @@ unsafe fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
     let class_name: &str = "io/twoyi/Renderer";
     let jni_methods = [
         jni_method!(init, renderer_init, "(Landroid/view/Surface;Ljava/lang/String;FFI)V"),
-        jni_method!(initDisplayOnly, renderer_init_display_only, "(Landroid/view/Surface;FFI)V"),
         jni_method!(
             resetWindow,
             renderer_reset_window,

@@ -4,6 +4,27 @@ A standalone server for managing twoyi containers. This separates the container 
 
 The server is built for aarch64 Android (`aarch64-linux-android`), compatible with Android/Termux environments.
 
+## Architecture
+
+The twoyi system has two main components:
+1. **Server** (this binary): Manages the Android container, handles input, runs on the device with the rootfs
+2. **Client** (Android app): Connects to the server, can send touch/key events
+
+### Important: Display Rendering
+
+The container's display is rendered via OpenGL using unix domain sockets in the rootfs directory. **The display can only be seen on the device where the server is running** because:
+- The OpenGL renderer (`libOpenglRender.so`) connects to local unix sockets in the rootfs
+- These sockets cannot be forwarded over TCP
+
+When using "Connect to Server" from a remote device:
+- The remote app can control the container (touch/key events are forwarded)
+- The remote app shows a "connected" status screen
+- The actual display is visible on the device running the server
+
+For local use (server and display on same device), use:
+- **Start Local Container** - Original behavior
+- **Start New Server** - Starts server mode on the same device
+
 ## Building
 
 ### For native platform (development)

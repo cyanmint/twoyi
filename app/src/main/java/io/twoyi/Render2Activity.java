@@ -95,11 +95,9 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
 
             if (MODE_LOCAL.equals(mMode) || MODE_SERVER.equals(mMode)) {
                 Renderer.init(surface, RomManager.getLoaderPath(getApplicationContext()), xdpi, ydpi, (int) getBestFps());
-            } else if (MODE_REMOTE.equals(mMode)) {
-                // In remote mode, only initialize display without spawning container
-                // The container is managed by the remote server
-                Renderer.initDisplayOnly(surface, xdpi, ydpi, (int) getBestFps());
             }
+            // Note: Remote mode doesn't initialize the renderer because the graphics
+            // are processed on the server. Remote mode only sends touch/key events.
 
             Log.i(TAG, "surfaceCreated, mode: " + mMode);
         }
@@ -107,15 +105,17 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
         @Override
         public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
             Surface surface = holder.getSurface();
-            // Reset window for all modes
-            Renderer.resetWindow(surface, 0, 0, mSurfaceView.getWidth(), mSurfaceView.getHeight());
+            if (MODE_LOCAL.equals(mMode) || MODE_SERVER.equals(mMode)) {
+                Renderer.resetWindow(surface, 0, 0, mSurfaceView.getWidth(), mSurfaceView.getHeight());
+            }
             Log.i(TAG, "surfaceChanged: " + mSurfaceView.getWidth() + "x" + mSurfaceView.getHeight());
         }
 
         @Override
         public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-            // Remove window for all modes
-            Renderer.removeWindow(holder.getSurface());
+            if (MODE_LOCAL.equals(mMode) || MODE_SERVER.equals(mMode)) {
+                Renderer.removeWindow(holder.getSurface());
+            }
             Log.i(TAG, "surfaceDestroyed!");
         }
     };
@@ -189,7 +189,8 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
 
                 mRemoteSocket = new Socket();
                 mRemoteSocket.connect(new java.net.InetSocketAddress(host, port), 10000); // 10 second connection timeout
-                mRemoteSocket.setSoTimeout(30000); // 30 second read timeout
+                // No read timeout - we use keepalive to maintain connection
+                mRemoteSocket.setKeepAlive(true);
                 mRemoteWriter = new PrintWriter(new OutputStreamWriter(mRemoteSocket.getOutputStream()), true);
                 mRemoteReader = new BufferedReader(new InputStreamReader(mRemoteSocket.getInputStream()));
 
@@ -207,9 +208,13 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
 
                     runOnUiThread(() -> {
                         Toast.makeText(this, R.string.connection_success, Toast.LENGTH_SHORT).show();
-                        mRootView.addView(mSurfaceView, 0);
-                        showBootingProcedure();
+                        // In remote mode, show status screen instead of surface view
+                        // because rendering happens on the server, not the client
+                        showRemoteModeStatus();
                     });
+                    
+                    // Start keepalive thread to maintain connection
+                    startKeepAliveThread();
                 } else {
                     throw new Exception("Invalid server response");
                 }
@@ -221,6 +226,41 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
                 });
             }
         }, "connect-server").start();
+    }
+    
+    private void showRemoteModeStatus() {
+        // Stop loading animation
+        mLoadingView.stopAnimation();
+        
+        // Show connection status
+        mLoadingText.setVisibility(View.VISIBLE);
+        mLoadingText.setText(getString(R.string.remote_mode_connected, mServerAddress));
+        mLoadingText.setTextSize(16);
+        
+        // Keep loading layout visible but hide animation
+        mLoadingView.setVisibility(View.GONE);
+        mBootLogView.setVisibility(View.GONE);
+    }
+    
+    private void startKeepAliveThread() {
+        new Thread(() -> {
+            while (mRemoteConnected && mRemoteWriter != null) {
+                try {
+                    Thread.sleep(15000); // Send ping every 15 seconds
+                    if (mRemoteConnected && mRemoteWriter != null) {
+                        synchronized (mRemoteWriter) {
+                            mRemoteWriter.println("{\"type\":\"Ping\"}");
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Log.i(TAG, "Keepalive thread interrupted");
+                    break;
+                } catch (Exception e) {
+                    Log.e(TAG, "Keepalive failed", e);
+                    break;
+                }
+            }
+        }, "keepalive").start();
     }
 
     @Override
