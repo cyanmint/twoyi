@@ -68,6 +68,10 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
 
     private Bitmap mFrameBitmap;
     private final Object mBitmapLock = new Object();
+    
+    // Reusable buffers to reduce GC pressure
+    private byte[] mFrameData;
+    private ByteBuffer mPixelBuffer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -268,9 +272,12 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                     int height = bb.getInt();
                     int length = bb.getInt();
                     
-                    // Read frame data
-                    byte[] frameData = new byte[length];
-                    mDataReader.readFully(frameData);
+                    // Read frame data - reuse buffer if possible
+                    if (mFrameData == null || mFrameData.length < length) {
+                        mFrameData = new byte[length];
+                        mPixelBuffer = null; // Need to recreate ByteBuffer wrapper
+                    }
+                    mDataReader.readFully(mFrameData, 0, length);
                     
                     // Update bitmap
                     synchronized (mBitmapLock) {
@@ -278,9 +285,15 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                             mFrameBitmap.getWidth() == width && 
                             mFrameBitmap.getHeight() == height) {
                             
-                            // Convert RGBA bytes to bitmap
-                            ByteBuffer buffer = ByteBuffer.wrap(frameData);
-                            mFrameBitmap.copyPixelsFromBuffer(buffer);
+                            // Reuse ByteBuffer wrapper if possible
+                            if (mPixelBuffer == null || mPixelBuffer.capacity() < length) {
+                                mPixelBuffer = ByteBuffer.wrap(mFrameData);
+                            } else {
+                                mPixelBuffer.clear();
+                                mPixelBuffer.put(mFrameData, 0, length);
+                                mPixelBuffer.flip();
+                            }
+                            mFrameBitmap.copyPixelsFromBuffer(mPixelBuffer);
                         }
                     }
                     
