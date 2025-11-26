@@ -107,6 +107,7 @@ public class SettingsActivity extends AppCompatActivity {
             Preference serverAddress = findPreference(R.string.settings_key_server_address);
             Preference startServer = findPreference(R.string.settings_key_start_server);
             Preference connectServer = findPreference(R.string.settings_key_connect_server);
+            Preference serverConsole = findPreference(R.string.settings_key_server_console);
 
             // Update server address summary with current value
             String currentAddress = AppKV.getStringConfig(getActivity(), AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
@@ -124,6 +125,11 @@ public class SettingsActivity extends AppCompatActivity {
 
             connectServer.setOnPreferenceClickListener(preference -> {
                 connectToServer();
+                return true;
+            });
+
+            serverConsole.setOnPreferenceClickListener(preference -> {
+                UIHelper.startActivity(getContext(), ServerConsoleActivity.class);
                 return true;
             });
 

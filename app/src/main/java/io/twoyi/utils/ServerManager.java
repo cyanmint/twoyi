@@ -21,6 +21,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Manages the twoyi server binary and connections
@@ -30,6 +32,72 @@ public class ServerManager {
     private static final String SERVER_BINARY_NAME = "twoyi-server";
 
     private static Process serverProcess;
+    private static final List<ServerOutputListener> outputListeners = new ArrayList<>();
+    private static final List<String> serverLog = new ArrayList<>();
+    private static final int MAX_LOG_LINES = 500;
+
+    /**
+     * Interface for receiving server output
+     */
+    public interface ServerOutputListener {
+        void onServerOutput(String line);
+    }
+
+    /**
+     * Add a listener for server output
+     */
+    public static void addOutputListener(ServerOutputListener listener) {
+        synchronized (outputListeners) {
+            if (!outputListeners.contains(listener)) {
+                outputListeners.add(listener);
+            }
+        }
+    }
+
+    /**
+     * Remove a listener for server output
+     */
+    public static void removeOutputListener(ServerOutputListener listener) {
+        synchronized (outputListeners) {
+            outputListeners.remove(listener);
+        }
+    }
+
+    /**
+     * Get the current server log
+     */
+    public static List<String> getServerLog() {
+        synchronized (serverLog) {
+            return new ArrayList<>(serverLog);
+        }
+    }
+
+    /**
+     * Clear the server log
+     */
+    public static void clearServerLog() {
+        synchronized (serverLog) {
+            serverLog.clear();
+        }
+    }
+
+    private static void notifyOutputListeners(String line) {
+        synchronized (serverLog) {
+            serverLog.add(line);
+            while (serverLog.size() > MAX_LOG_LINES) {
+                serverLog.remove(0);
+            }
+        }
+        synchronized (outputListeners) {
+            for (ServerOutputListener listener : outputListeners) {
+                try {
+                    listener.onServerOutput(line);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error notifying listener", e);
+                }
+            }
+        }
+    }
 
     /**
      * Extract the server binary from assets to the app's files directory
@@ -62,6 +130,9 @@ public class ServerManager {
     public static void startServer(Context context, String bindAddress, int width, int height) throws IOException {
         // Stop any existing server
         stopServer();
+        
+        // Clear previous log
+        clearServerLog();
 
         // Extract server binary
         File serverBinary = extractServerBinary(context);
@@ -72,16 +143,21 @@ public class ServerManager {
             throw new IOException("Rootfs directory does not exist: " + rootfsDir);
         }
 
+        // Get loader path
+        String loaderPath = RomManager.getLoaderPath(context);
+
         // Ensure boot files exist
         RomManager.ensureBootFiles(context);
 
-        // Build command
+        // Build command with verbose mode and loader
         ProcessBuilder pb = new ProcessBuilder(
             serverBinary.getAbsolutePath(),
             "--rootfs", rootfsDir.getAbsolutePath(),
             "--bind", bindAddress,
             "--width", String.valueOf(width),
-            "--height", String.valueOf(height)
+            "--height", String.valueOf(height),
+            "--loader", loaderPath,
+            "--verbose"
         );
         
         pb.directory(context.getFilesDir());
@@ -90,20 +166,24 @@ public class ServerManager {
         // Start the process
         serverProcess = pb.start();
         
-        // Log output in background
+        // Log output in background and notify listeners
         new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(serverProcess.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     Log.i(TAG, "Server: " + line);
+                    notifyOutputListeners(line);
                 }
             } catch (IOException e) {
                 Log.e(TAG, "Error reading server output", e);
+                notifyOutputListeners("Error reading server output: " + e.getMessage());
             }
+            notifyOutputListeners("Server process ended");
         }, "server-output").start();
         
         Log.i(TAG, "Server process started");
+        notifyOutputListeners("Server process started");
     }
 
     /**

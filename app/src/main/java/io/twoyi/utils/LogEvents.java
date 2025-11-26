@@ -113,6 +113,16 @@ public class LogEvents {
 
         reportItems.add(ReportItem.create(logcatFile));
 
+        // server log
+        File serverLogFile = new File(context.getCacheDir(), "server_log.txt");
+        try (PrintWriter pw = new PrintWriter(new FileWriter(serverLogFile))) {
+            List<String> serverLog = ServerManager.getServerLog();
+            for (String line : serverLog) {
+                pw.println(line);
+            }
+        } catch (Throwable ignored) {}
+        reportItems.add(ReportItem.create(serverLogFile));
+
         // tombstones
         File rootfsDir = RomManager.getRootfsDir(context);
         File romDataDir = new File(rootfsDir, "data");
@@ -162,6 +172,9 @@ public class LogEvents {
             PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             pw.println("PACKAGE: " + packageInfo.packageName);
             pw.println("VERSION: " + packageInfo.versionName);
+            
+            // Server status
+            pw.println("SERVER_RUNNING: " + ServerManager.isServerRunning());
         } catch (Throwable ignored) {}
 
         reportItems.add(ReportItem.create(buildInfo));

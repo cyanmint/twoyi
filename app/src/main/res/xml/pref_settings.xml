@@ -21,6 +21,11 @@
             android:key="@string/settings_key_connect_server"
             android:summary="@string/settings_connect_server_summary"
             android:title="@string/settings_key_connect_server" />
+
+        <Preference
+            android:key="@string/settings_key_server_console"
+            android:summary="@string/settings_server_console_summary"
+            android:title="@string/settings_key_server_console" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/settings_category_basic">

@@ -60,6 +60,11 @@
             android:label="@string/create_app_activity"
             android:screenOrientation="portrait" />
 
+        <activity
+            android:name=".ui.ServerConsoleActivity"
+            android:label="@string/settings_key_server_console"
+            android:screenOrientation="portrait" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="io.twoyi.fileprovider"
