@@ -15,4 +15,4 @@ if [ $? -ne 0 ]; then
 fi
 # Copy to assets directory
 mkdir -p ../app/src/main/assets
-cp target/aarch64-linux-android/release/twoyi-server ../app/src/main/assets/twoyi-server
+cp target/aarch64-linux-android/release/twoyi-server ../app/src/main/assets/twoyi-server || { echo "Copy failed!"; exit 1; }
