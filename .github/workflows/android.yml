@@ -7,7 +7,29 @@ on:
     branches: [ main, master ]
 
 jobs:
-  build:
+  build-server:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build server
+      run: |
+        cd server
+        cargo build --release
+
+    - name: Upload server binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: twoyi-server
+        path: server/target/release/twoyi-server
+
+  build-android:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,6 +60,26 @@ jobs:
 
     - name: Install Android NDK
       run: sdkmanager "ndk;26.1.10909125"
+
+    - name: Download rootfs from release
+      run: |
+        mkdir -p /tmp/twoyi-assets
+        wget -q https://github.com/twoyi/twoyi/releases/download/0.5.4/twoyi_0.5.4-03211927-release.apk -O /tmp/twoyi-assets/twoyi.apk
+        cd /tmp/twoyi-assets
+        unzip -q twoyi.apk -d apk_contents
+        mkdir -p $GITHUB_WORKSPACE/app/src/main/assets
+        mkdir -p $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a
+        cp apk_contents/assets/rootfs.7z $GITHUB_WORKSPACE/app/src/main/assets/
+        cp apk_contents/assets/rom.ini $GITHUB_WORKSPACE/app/src/main/assets/
+        # Copy prebuilt native libraries
+        cp apk_contents/lib/arm64-v8a/libtwoyi.so $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
+        cp apk_contents/lib/arm64-v8a/libp7zip.so $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
+        # Verify all required files exist
+        test -f $GITHUB_WORKSPACE/app/src/main/assets/rootfs.7z || { echo "Error: rootfs.7z not found"; exit 1; }
+        test -f $GITHUB_WORKSPACE/app/src/main/assets/rom.ini || { echo "Error: rom.ini not found"; exit 1; }
+        test -f $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libtwoyi.so || { echo "Error: libtwoyi.so not found"; exit 1; }
+        test -f $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libp7zip.so || { echo "Error: libp7zip.so not found"; exit 1; }
+        echo "All required files downloaded and verified successfully"
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
