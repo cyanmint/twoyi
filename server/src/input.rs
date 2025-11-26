@@ -142,16 +142,14 @@ pub fn handle_touch_event(action: i32, pointer_id: i32, x: f32, y: f32, pressure
                 input_event_write(fd, EV_SYN, SYN_REPORT, SYN_REPORT);
             }
             ACTION_UP => {
-                let mut index = 0;
-                while index != MAX_POINTERS {
-                    let mut mt = G_INPUT_MT.lock().unwrap();
+                let mut mt = G_INPUT_MT.lock().unwrap();
+                for index in 0..MAX_POINTERS {
                     if mt[index] != 0 {
                         mt[index] = 0;
                         input_event_write(fd, EV_ABS, ABS_MT_SLOT, index as i32);
                         input_event_write(fd, EV_ABS, ABS_MT_TRACKING_ID, -1);
                         input_event_write(fd, EV_SYN, SYN_REPORT, SYN_REPORT);
                     }
-                    index += 1;
                 }
             }
             ACTION_MOVE => {
