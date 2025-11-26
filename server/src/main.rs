@@ -42,6 +42,10 @@ struct Args {
     /// Verbose mode - show container output in real-time
     #[arg(short, long)]
     verbose: bool,
+
+    /// Setup mode - start server without launching container (for manual environment setup)
+    #[arg(short, long)]
+    setup: bool,
 }
 
 fn main() {
@@ -57,6 +61,10 @@ fn main() {
     info!("Screen size: {}x{}", args.width, args.height);
     if args.verbose {
         info!("Verbose mode: enabled");
+    }
+    if args.setup {
+        info!("Setup mode: enabled (container will NOT be started automatically)");
+        info!("You can manually set up the environment and start the container later.");
     }
     if let Some(ref loader) = args.loader {
         info!("Loader: {:?}", loader);
@@ -78,17 +86,25 @@ fn main() {
     let rootfs_str = args.rootfs.to_string_lossy().to_string();
     input::start_input_system(args.width, args.height, &rootfs_str);
 
-    // Start container process
+    // Start container process (unless in setup mode)
     let container_running = Arc::new(AtomicBool::new(true));
-    let container_running_clone = container_running.clone();
     
-    let rootfs_clone = args.rootfs.clone();
-    let loader_clone = args.loader.clone();
-    let verbose = args.verbose;
-    thread::spawn(move || {
-        start_container(&rootfs_clone, loader_clone.as_ref(), verbose);
-        container_running_clone.store(false, Ordering::SeqCst);
-    });
+    if !args.setup {
+        let container_running_clone = container_running.clone();
+        let rootfs_clone = args.rootfs.clone();
+        let loader_clone = args.loader.clone();
+        let verbose = args.verbose;
+        thread::spawn(move || {
+            start_container(&rootfs_clone, loader_clone.as_ref(), verbose);
+            container_running_clone.store(false, Ordering::SeqCst);
+        });
+    } else {
+        info!("Container startup skipped (setup mode).");
+        info!("To start the container manually, run: cd {:?} && ./init", args.rootfs);
+        if let Some(ref loader) = args.loader {
+            info!("Don't forget to set: export TYLOADER={:?}", loader);
+        }
+    }
 
     // Start TCP server for client connections
     let listener = match TcpListener::bind(&args.bind) {
@@ -101,6 +117,7 @@ fn main() {
 
     info!("Server listening on {}", args.bind);
 
+    let setup_mode = args.setup;
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -108,7 +125,7 @@ fn main() {
                 let height = args.height;
                 let rootfs = args.rootfs.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs);
+                    handle_client(stream, width, height, &rootfs, setup_mode);
                 });
             }
             Err(e) => {
@@ -216,16 +233,18 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool) {
     }
 }
 
-fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf) {
+fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool) {
     let peer_addr = stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
     info!("Client connected from {}", peer_addr);
 
     // Send initial info to client
+    let status = if setup_mode { "setup" } else { "running" };
     let info = serde_json::json!({
         "width": width,
         "height": height,
         "rootfs": rootfs.to_string_lossy(),
-        "status": "running"
+        "status": status,
+        "setup_mode": setup_mode
     });
     
     if let Ok(info_str) = serde_json::to_string(&info) {

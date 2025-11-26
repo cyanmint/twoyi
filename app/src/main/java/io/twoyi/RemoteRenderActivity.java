@@ -34,6 +34,10 @@ import io.twoyi.utils.NavUtils;
 
 /**
  * Activity for connecting to and rendering from a remote twoyi server
+ * 
+ * Note: Currently this activity only provides input forwarding to the server.
+ * Full screen rendering over TCP is not yet implemented - the server handles
+ * display through its local OpenGL context.
  */
 public class RemoteRenderActivity extends Activity implements View.OnTouchListener {
 
@@ -43,13 +47,17 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
     private LoadingAnimationView mLoadingView;
     private TextView mLoadingText;
     private View mLoadingLayout;
-    private View mContentView;
+    private StatusView mContentView;
 
     private Socket mSocket;
     private PrintWriter mWriter;
     private BufferedReader mReader;
     private final AtomicBoolean mConnected = new AtomicBoolean(false);
     private String mServerAddress;
+    private int mServerWidth = 1080;
+    private int mServerHeight = 1920;
+    private String mServerStatus = "unknown";
+    private boolean mSetupMode = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,28 +82,64 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
 
         mLoadingText.setText(getString(R.string.server_connecting));
 
-        // Create a simple view to show connection status and receive touch events
-        mContentView = new View(this) {
-            @Override
-            protected void onDraw(android.graphics.Canvas canvas) {
-                super.onDraw(canvas);
-                canvas.drawColor(android.graphics.Color.BLACK);
-                
-                if (mConnected.get()) {
-                    android.graphics.Paint paint = new android.graphics.Paint();
-                    paint.setColor(android.graphics.Color.WHITE);
-                    paint.setTextSize(48);
-                    paint.setTextAlign(android.graphics.Paint.Align.CENTER);
-                    canvas.drawText("Connected to: " + mServerAddress, 
-                        getWidth() / 2f, getHeight() / 2f - 50, paint);
-                    canvas.drawText("Touch to send input events", 
-                        getWidth() / 2f, getHeight() / 2f + 50, paint);
-                }
-            }
-        };
+        // Create status view
+        mContentView = new StatusView(this);
         mContentView.setOnTouchListener(this);
 
         connectToServer();
+    }
+
+    private class StatusView extends View {
+        private final android.graphics.Paint mPaint;
+        private final android.graphics.Paint mSmallPaint;
+        
+        public StatusView(android.content.Context context) {
+            super(context);
+            mPaint = new android.graphics.Paint();
+            mPaint.setColor(android.graphics.Color.WHITE);
+            mPaint.setTextSize(48);
+            mPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
+            mPaint.setAntiAlias(true);
+            
+            mSmallPaint = new android.graphics.Paint();
+            mSmallPaint.setColor(android.graphics.Color.LTGRAY);
+            mSmallPaint.setTextSize(32);
+            mSmallPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
+            mSmallPaint.setAntiAlias(true);
+        }
+        
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            super.onDraw(canvas);
+            canvas.drawColor(android.graphics.Color.BLACK);
+            
+            if (mConnected.get()) {
+                float centerX = getWidth() / 2f;
+                float centerY = getHeight() / 2f;
+                
+                // Connection status
+                mPaint.setColor(android.graphics.Color.GREEN);
+                canvas.drawText("✓ Connected", centerX, centerY - 150, mPaint);
+                
+                mPaint.setColor(android.graphics.Color.WHITE);
+                canvas.drawText("Server: " + mServerAddress, centerX, centerY - 80, mPaint);
+                
+                // Server info
+                mSmallPaint.setColor(android.graphics.Color.LTGRAY);
+                canvas.drawText("Resolution: " + mServerWidth + "x" + mServerHeight, centerX, centerY, mSmallPaint);
+                canvas.drawText("Status: " + mServerStatus, centerX, centerY + 40, mSmallPaint);
+                
+                if (mSetupMode) {
+                    mSmallPaint.setColor(android.graphics.Color.YELLOW);
+                    canvas.drawText("(Setup Mode - Container not running)", centerX, centerY + 80, mSmallPaint);
+                }
+                
+                // Instructions
+                mSmallPaint.setColor(android.graphics.Color.GRAY);
+                canvas.drawText("Touch events are being forwarded to the server", centerX, centerY + 160, mSmallPaint);
+                canvas.drawText("View server output in Settings > Server Console", centerX, centerY + 200, mSmallPaint);
+            }
+        }
     }
 
     private void connectToServer() {
@@ -121,11 +165,12 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
 
                 if (serverInfo != null) {
                     JSONObject info = new JSONObject(serverInfo);
-                    int width = info.optInt("width", 1080);
-                    int height = info.optInt("height", 1920);
-                    String status = info.optString("status", "unknown");
+                    mServerWidth = info.optInt("width", 1080);
+                    mServerHeight = info.optInt("height", 1920);
+                    mServerStatus = info.optString("status", "unknown");
+                    mSetupMode = info.optBoolean("setup_mode", false);
                     
-                    Log.i(TAG, "Server: " + width + "x" + height + ", status: " + status);
+                    Log.i(TAG, "Server: " + mServerWidth + "x" + mServerHeight + ", status: " + mServerStatus);
                 }
 
                 mConnected.set(true);
