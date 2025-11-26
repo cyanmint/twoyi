@@ -95,6 +95,10 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
 
             if (MODE_LOCAL.equals(mMode) || MODE_SERVER.equals(mMode)) {
                 Renderer.init(surface, RomManager.getLoaderPath(getApplicationContext()), xdpi, ydpi, (int) getBestFps());
+            } else if (MODE_REMOTE.equals(mMode)) {
+                // In remote mode, only initialize display without spawning container
+                // The container is managed by the remote server
+                Renderer.initDisplayOnly(surface, xdpi, ydpi, (int) getBestFps());
             }
 
             Log.i(TAG, "surfaceCreated, mode: " + mMode);
@@ -103,17 +107,15 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
         @Override
         public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
             Surface surface = holder.getSurface();
-            if (MODE_LOCAL.equals(mMode) || MODE_SERVER.equals(mMode)) {
-                Renderer.resetWindow(surface, 0, 0, mSurfaceView.getWidth(), mSurfaceView.getHeight());
-            }
+            // Reset window for all modes
+            Renderer.resetWindow(surface, 0, 0, mSurfaceView.getWidth(), mSurfaceView.getHeight());
             Log.i(TAG, "surfaceChanged: " + mSurfaceView.getWidth() + "x" + mSurfaceView.getHeight());
         }
 
         @Override
         public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-            if (MODE_LOCAL.equals(mMode) || MODE_SERVER.equals(mMode)) {
-                Renderer.removeWindow(holder.getSurface());
-            }
+            // Remove window for all modes
+            Renderer.removeWindow(holder.getSurface());
             Log.i(TAG, "surfaceDestroyed!");
         }
     };

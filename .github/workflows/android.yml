@@ -99,8 +99,8 @@ jobs:
         mkdir -p $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a
         cp apk_contents/assets/rootfs.7z $GITHUB_WORKSPACE/app/src/main/assets/
         cp apk_contents/assets/rom.ini $GITHUB_WORKSPACE/app/src/main/assets/
-        # Copy ALL prebuilt native libraries (libtwoyi.so, libp7zip.so, libloader.so, libOpenglRender.so, libadb.so)
-        cp apk_contents/lib/arm64-v8a/libtwoyi.so $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
+        # Copy prebuilt native libraries EXCEPT libtwoyi.so (we build that from source)
+        # libtwoyi.so will be built by Gradle's cargoBuild task
         cp apk_contents/lib/arm64-v8a/libp7zip.so $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
         cp apk_contents/lib/arm64-v8a/libloader.so $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
         cp apk_contents/lib/arm64-v8a/libOpenglRender.so $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
@@ -108,11 +108,10 @@ jobs:
         # Copy twoyi-server binary to assets
         cp /tmp/server/twoyi-server $GITHUB_WORKSPACE/app/src/main/assets/
         chmod +x $GITHUB_WORKSPACE/app/src/main/assets/twoyi-server
-        # Verify all required files exist
+        # Verify all required files exist (except libtwoyi.so which is built later)
         test -f $GITHUB_WORKSPACE/app/src/main/assets/rootfs.7z || { echo "Error: rootfs.7z not found"; exit 1; }
         test -f $GITHUB_WORKSPACE/app/src/main/assets/rom.ini || { echo "Error: rom.ini not found"; exit 1; }
         test -f $GITHUB_WORKSPACE/app/src/main/assets/twoyi-server || { echo "Error: twoyi-server not found"; exit 1; }
-        test -f $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libtwoyi.so || { echo "Error: libtwoyi.so not found"; exit 1; }
         test -f $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libp7zip.so || { echo "Error: libp7zip.so not found"; exit 1; }
         test -f $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libloader.so || { echo "Error: libloader.so not found"; exit 1; }
         test -f $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libOpenglRender.so || { echo "Error: libOpenglRender.so not found"; exit 1; }
