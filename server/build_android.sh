@@ -6,10 +6,7 @@
 #
 
 # Build the server binary for Android arm64
-cargo build --release --target aarch64-linux-android $1
-
-# Check if build succeeded
-if [ $? -ne 0 ]; then
+if ! cargo build --release --target aarch64-linux-android $1; then
     echo "Build failed!"
     exit 1
 fi
