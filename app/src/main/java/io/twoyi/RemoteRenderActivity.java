@@ -406,11 +406,11 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
         }
         
         try {
-            if (mWriter != null) mWriter.close();
-            if (mDataReader != null) mDataReader.close();
-            if (mSocket != null) mSocket.close();
-        } catch (Exception e) {
-            Log.e(TAG, "Error closing connection", e);
+            if (mSocket != null && !mSocket.isClosed()) {
+                mSocket.close(); // This closes associated streams
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Error closing socket", e);
         }
     }
 }
