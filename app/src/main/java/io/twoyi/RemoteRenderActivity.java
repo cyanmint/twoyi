@@ -257,8 +257,8 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                     }
                     
                     if (!validHeader) {
-                        Log.w(TAG, "Invalid frame header, skipping byte");
-                        continue;
+                        Log.e(TAG, "Invalid frame header received, connection may be corrupted");
+                        break; // Exit the loop and close connection
                     }
                     
                     // Read frame dimensions and length
