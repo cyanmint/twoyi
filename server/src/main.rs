@@ -76,12 +76,11 @@ fn start_container(rootfs: &PathBuf, width: i32, height: i32) -> Result<(), Stri
     info!("Starting container in: {}", working_dir);
     info!("Log file: {:?}", log_path);
 
-    // Start input system
-    input::start_input_system(rootfs, width, height);
-
+    // Create log file first
     let outputs = File::create(&log_path).map_err(|e| format!("Failed to create log file: {}", e))?;
     let errors = outputs.try_clone().map_err(|e| format!("Failed to clone log file: {}", e))?;
     
+    info!("Spawning init process...");
     let result = Command::new("./init")
         .current_dir(&working_dir)
         .stdout(Stdio::from(outputs))
@@ -91,6 +90,14 @@ fn start_container(rootfs: &PathBuf, width: i32, height: i32) -> Result<(), Stri
     match result {
         Ok(child) => {
             info!("Container started with PID: {}", child.id());
+            
+            // Start input system after container is running
+            info!("Starting input system...");
+            let rootfs_clone = rootfs.clone();
+            std::thread::spawn(move || {
+                input::start_input_system(&rootfs_clone, width, height);
+            });
+            
             Ok(())
         }
         Err(e) => {

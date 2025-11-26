@@ -18,28 +18,37 @@ jobs:
     - name: Setup Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: aarch64-unknown-linux-musl
+        targets: aarch64-linux-android
 
-    - name: Install cross-compilation tools
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Accept Android SDK licenses
+      run: yes | sdkmanager --licenses || true
+
+    - name: Install Android NDK
+      run: sdkmanager "ndk;26.1.10909125"
+
+    - name: Set up NDK environment
       run: |
-        sudo apt-get update
-        sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
+        echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> $GITHUB_ENV
+        echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> $GITHUB_ENV
 
-    - name: Install cross
-      run: cargo install cross --git https://github.com/cross-rs/cross
-
-    - name: Build server for aarch64 (static)
+    - name: Build server for aarch64-android
       run: |
         cd server
-        cross build --release --target aarch64-unknown-linux-musl
-        # Verify the binary is statically linked
-        file target/aarch64-unknown-linux-musl/release/twoyi-server
+        export CC_aarch64_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+        export AR_aarch64_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+        export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+        cargo build --release --target aarch64-linux-android
+        # Verify the binary
+        file target/aarch64-linux-android/release/twoyi-server
 
     - name: Upload server binary
       uses: actions/upload-artifact@v4
       with:
         name: twoyi-server-aarch64
-        path: server/target/aarch64-unknown-linux-musl/release/twoyi-server
+        path: server/target/aarch64-linux-android/release/twoyi-server
 
   build-android:
     runs-on: ubuntu-latest

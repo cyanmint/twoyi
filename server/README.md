@@ -2,7 +2,7 @@
 
 A standalone server for managing twoyi containers. This separates the container management functionality from the Android rendering app.
 
-The server is built as a static binary for aarch64 (ARM64) using musl, so it can run on Termux without glibc.
+The server is built for aarch64 Android (`aarch64-linux-android`), compatible with Android/Termux environments.
 
 ## Building
 
@@ -13,18 +13,21 @@ cd server
 cargo build --release
 ```
 
-### For aarch64 (ARM64) static binary
+### For aarch64 Android
+
+Requires Android NDK. Set up environment variables first:
 
 ```bash
-# Install cross
-cargo install cross --git https://github.com/cross-rs/cross
+export ANDROID_NDK_HOME=/path/to/ndk
+export CC_aarch64_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+export AR_aarch64_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
 
-# Build static binary
 cd server
-cross build --release --target aarch64-unknown-linux-musl
+cargo build --release --target aarch64-linux-android
 ```
 
-The binary will be at `target/aarch64-unknown-linux-musl/release/twoyi-server`.
+The binary will be at `target/aarch64-linux-android/release/twoyi-server`.
 
 ## Usage
 
@@ -57,7 +60,7 @@ twoyi-server --rootfs /path/to/rootfs --extract-rootfs /path/to/rootfs.7z
 
 ## Running on Termux
 
-The server binary is statically linked and can run directly on Termux:
+The server binary is built for Android and can run directly on Termux:
 
 ```bash
 # Copy the binary to Termux
