@@ -49,10 +49,6 @@ jobs:
       run: |
         cd server
         cargo build --release --target aarch64-linux-android
-        if [ $? -ne 0 ]; then
-          echo "Build failed!"
-          exit 1
-        fi
         mkdir -p ../app/src/main/assets
         cp target/aarch64-linux-android/release/twoyi-server ../app/src/main/assets/
       env:
