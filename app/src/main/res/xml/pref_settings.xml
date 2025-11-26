@@ -20,7 +20,7 @@
         <Preference
             android:key="connect_server"
             android:summary="@string/settings_connect_server_summary"
-            android:title="@string/settings_connect_server_title" />
+            android:title="@string/settings_key_connect_server" />
 
         <Preference
             android:key="server_console"
