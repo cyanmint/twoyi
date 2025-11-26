@@ -81,7 +81,11 @@ impl FrameStreamer {
                 // Send to all connected clients
                 if let Ok(mut clients) = clients.lock() {
                     clients.retain(|client| {
-                        send_frame(client, &frame, width, height).is_ok()
+                        let result = send_frame(client, &frame, width, height).is_ok();
+                        if !result {
+                            info!("Client disconnected from framebuffer stream");
+                        }
+                        result
                     });
                 }
                 
