@@ -225,9 +225,9 @@ public class ServerManager {
             return false;
         }
         
-        try (Socket socket = new Socket(host, port)) {
+        try (Socket socket = new Socket(host, port);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
             socket.setSoTimeout(5000);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             String response = reader.readLine();
             return response != null && response.contains("status");
         } catch (IOException e) {
