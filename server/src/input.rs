@@ -128,24 +128,18 @@ pub fn handle_touch_event(action: i32, pointer_id: i32, x: f32, y: f32, pressure
                 let mut mt = G_INPUT_MT.lock().unwrap();
                 mt[pointer_id as usize] = 1;
 
-                let mut index = 0;
-                while index < MAX_POINTERS {
-                    if mt[index] != 0 {
-                        input_event_write(fd, EV_ABS, ABS_MT_SLOT, pointer_id);
-                        input_event_write(fd, EV_ABS, ABS_MT_TRACKING_ID, pointer_id + 1);
+                input_event_write(fd, EV_ABS, ABS_MT_SLOT, pointer_id);
+                input_event_write(fd, EV_ABS, ABS_MT_TRACKING_ID, pointer_id + 1);
 
-                        if index == 0 {
-                            input_event_write(fd, EV_KEY, BTN_TOUCH, 108);
-                            input_event_write(fd, EV_KEY, BTN_TOOL_FINGER, 108);
-                        }
-
-                        input_event_write(fd, EV_ABS, ABS_MT_POSITION_X, x as i32);
-                        input_event_write(fd, EV_ABS, ABS_MT_POSITION_Y, y as i32);
-                        input_event_write(fd, EV_ABS, ABS_MT_PRESSURE, pressure as i32);
-                        input_event_write(fd, EV_SYN, SYN_REPORT, SYN_REPORT);
-                    }
-                    index += 1;
+                if pointer_id == 0 {
+                    input_event_write(fd, EV_KEY, BTN_TOUCH, 108);
+                    input_event_write(fd, EV_KEY, BTN_TOOL_FINGER, 108);
                 }
+
+                input_event_write(fd, EV_ABS, ABS_MT_POSITION_X, x as i32);
+                input_event_write(fd, EV_ABS, ABS_MT_POSITION_Y, y as i32);
+                input_event_write(fd, EV_ABS, ABS_MT_PRESSURE, pressure as i32);
+                input_event_write(fd, EV_SYN, SYN_REPORT, SYN_REPORT);
             }
             ACTION_UP => {
                 let mut index = 0;
