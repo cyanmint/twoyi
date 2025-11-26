@@ -282,9 +282,17 @@ public class SettingsActivity extends AppCompatActivity {
                     // Start the server
                     ServerManager.startServer(activity, address, width, height);
 
-                    // Wait a bit for the server to start
-                    Thread.sleep(2000);
+                    // Wait for server to be ready (with timeout)
+                    int maxAttempts = 10;
+                    boolean serverReady = false;
+                    for (int i = 0; i < maxAttempts && !serverReady; i++) {
+                        Thread.sleep(500);
+                        serverReady = ServerManager.testConnection(address);
+                    }
 
+                    if (!serverReady) {
+                        throw new IOException("Server did not start within timeout");
+                    }
                     activity.runOnUiThread(() -> {
                         dialog.dismiss();
                         Toast.makeText(activity, R.string.server_started, Toast.LENGTH_SHORT).show();
