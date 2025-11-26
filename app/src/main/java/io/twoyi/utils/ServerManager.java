@@ -178,8 +178,10 @@ public class ServerManager {
             } catch (IOException e) {
                 Log.e(TAG, "Error reading server output", e);
                 notifyOutputListeners("Error reading server output: " + e.getMessage());
+            } finally {
+                notifyOutputListeners("Server process ended");
+                serverProcess = null;  // Mark as stopped
             }
-            notifyOutputListeners("Server process ended");
         }, "server-output").start();
         
         Log.i(TAG, "Server process started");
