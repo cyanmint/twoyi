@@ -15,7 +15,7 @@
         <Preference
             android:key="start_server"
             android:summary="@string/settings_start_server_summary"
-            android:title="@string/settings_start_server_title" />
+            android:title="@string/settings_key_start_server" />
 
         <Preference
             android:key="connect_server"
