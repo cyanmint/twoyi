@@ -8,6 +8,11 @@
 # Build the server binary for Android arm64
 cargo build --release --target aarch64-linux-android $1
 
+# Check if build succeeded
+if [ $? -ne 0 ]; then
+    echo "Build failed!"
+    exit 1
+fi
 # Copy to assets directory
 mkdir -p ../app/src/main/assets
 cp target/aarch64-linux-android/release/twoyi-server ../app/src/main/assets/twoyi-server
