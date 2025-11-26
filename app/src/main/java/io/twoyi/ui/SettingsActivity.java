@@ -315,7 +315,7 @@ public class SettingsActivity extends AppCompatActivity {
                         Toast.makeText(activity, getString(R.string.server_start_failed, e.getMessage()), Toast.LENGTH_LONG).show();
                     });
                 }
-            }, "start-server").start();
+            }, "start-local-server").start();
         }
 
         private void connectToServer() {
