@@ -283,7 +283,13 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
     }
 
     // Handle input events from client
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut reader = match stream.try_clone() {
+        Ok(s) => BufReader::new(s),
+        Err(e) => {
+            error!("Failed to clone stream for reading: {}", e);
+            return;
+        }
+    };
     let mut line = String::new();
     
     loop {
