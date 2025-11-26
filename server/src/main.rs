@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use clap::Parser;
-use log::{info, error, debug};
+use log::{info, error, warn, debug};
 use std::fs::File;
 use std::io::{Write, BufReader, BufRead};
 use std::net::{TcpListener, TcpStream};
@@ -18,7 +18,15 @@ mod framebuffer;
 
 #[derive(Parser, Debug)]
 #[command(name = "twoyi-server")]
-#[command(about = "twoyi container server", long_about = None)]
+#[command(about = "twoyi container server\n\n\
+IMPORTANT: The container requires graphics support (gralloc HAL) to run properly.\n\
+When running standalone without the Android app, the graphics services (gralloc-2-0,\n\
+surfaceflinger) will crash because they need libOpenglRender.so which requires an\n\
+Android surface.\n\n\
+For full functionality, use the twoyi app. The standalone server is intended for:\n\
+- Debugging container startup issues\n\
+- Running headless containers (if graphics services are disabled)\n\
+- Manual environment setup and testing", long_about = None)]
 struct Args {
     /// Path to the rootfs directory
     #[arg(short, long)]
@@ -70,6 +78,13 @@ fn main() {
     if let Some(ref loader) = args.loader {
         info!("Loader: {:?}", loader);
     }
+    
+    // Print warning about graphics limitations
+    warn!("=== GRAPHICS LIMITATION ===");
+    warn!("The standalone server cannot provide graphics support (gralloc HAL).");
+    warn!("Graphics services (gralloc-2-0, surfaceflinger) will crash without libOpenglRender.so.");
+    warn!("For full graphics support, use the twoyi Android app instead.");
+    warn!("===========================");
 
     // Validate rootfs exists
     if !args.rootfs.exists() {
