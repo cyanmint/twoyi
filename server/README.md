@@ -2,14 +2,29 @@
 
 A standalone server for managing twoyi containers. This separates the container management functionality from the Android rendering app.
 
+The server is built as a static binary for aarch64 (ARM64) using musl, so it can run on Termux without glibc.
+
 ## Building
+
+### For native platform (development)
 
 ```bash
 cd server
 cargo build --release
 ```
 
-The binary will be at `target/release/twoyi-server`.
+### For aarch64 (ARM64) static binary
+
+```bash
+# Install cross
+cargo install cross --git https://github.com/cross-rs/cross
+
+# Build static binary
+cd server
+cross build --release --target aarch64-unknown-linux-musl
+```
+
+The binary will be at `target/aarch64-unknown-linux-musl/release/twoyi-server`.
 
 ## Usage
 
@@ -23,10 +38,11 @@ twoyi-server --rootfs <PATH_TO_ROOTFS> [OPTIONS]
 - `-l, --listen <LISTEN>` - Address and port to listen on (default: `0.0.0.0:9876`)
 - `--width <WIDTH>` - Screen width (default: 1080)
 - `--height <HEIGHT>` - Screen height (default: 1920)
+- `--extract-rootfs <PATH>` - Extract rootfs from a .7z archive before starting
 - `-h, --help` - Print help
 - `-V, --version` - Print version
 
-### Example
+### Examples
 
 ```bash
 # Start server with default settings
@@ -34,6 +50,24 @@ twoyi-server --rootfs /path/to/rootfs
 
 # Start server on a specific address and port
 twoyi-server --rootfs /path/to/rootfs --listen 192.168.1.100:9876 --width 720 --height 1280
+
+# Extract rootfs from archive and start server
+twoyi-server --rootfs /path/to/rootfs --extract-rootfs /path/to/rootfs.7z
+```
+
+## Running on Termux
+
+The server binary is statically linked and can run directly on Termux:
+
+```bash
+# Copy the binary to Termux
+cp twoyi-server /data/data/com.termux/files/home/
+
+# Make it executable
+chmod +x twoyi-server
+
+# Extract rootfs and start the server
+./twoyi-server --rootfs ./rootfs --extract-rootfs ./rootfs.7z --listen 127.0.0.1:9876
 ```
 
 ## Protocol
@@ -126,4 +160,10 @@ unzip twoyi.apk -d apk_contents
 
 # Now you can use ./rootfs as the rootfs directory
 twoyi-server --rootfs ./rootfs
+```
+
+Or use the built-in extraction feature:
+```bash
+# Server will extract rootfs.7z automatically
+twoyi-server --rootfs ./rootfs --extract-rootfs apk_contents/assets/rootfs.7z
 ```

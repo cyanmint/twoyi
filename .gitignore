@@ -21,6 +21,7 @@ app/build/
 # Downloaded/pre-built assets (not tracked in git)
 app/src/main/assets/rootfs.7z
 app/src/main/assets/rom.ini
+app/src/main/assets/twoyi-server
 app/src/main/jniLibs/arm64-v8a/libtwoyi.so
 app/src/main/jniLibs/arm64-v8a/libp7zip.so
 

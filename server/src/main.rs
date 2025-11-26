@@ -37,9 +37,33 @@ struct Args {
     /// Screen height
     #[arg(long, default_value = "1920")]
     height: i32,
+
+    /// Extract rootfs from a .7z archive before starting
+    /// If specified, the rootfs.7z will be extracted to the rootfs directory
+    #[arg(long)]
+    extract_rootfs: Option<PathBuf>,
 }
 
 static CONTAINER_STARTED: AtomicBool = AtomicBool::new(false);
+
+fn extract_rootfs(archive_path: &PathBuf, target_dir: &PathBuf) -> Result<(), String> {
+    info!("Extracting rootfs from {:?} to {:?}", archive_path, target_dir);
+
+    if !archive_path.exists() {
+        return Err(format!("Archive file not found: {:?}", archive_path));
+    }
+
+    // Create target directory if it doesn't exist
+    std::fs::create_dir_all(target_dir)
+        .map_err(|e| format!("Failed to create target directory: {}", e))?;
+
+    // Extract using sevenz-rust
+    sevenz_rust::decompress_file(archive_path, target_dir)
+        .map_err(|e| format!("Failed to extract archive: {}", e))?;
+
+    info!("Rootfs extraction completed successfully");
+    Ok(())
+}
 
 fn start_container(rootfs: &PathBuf, width: i32, height: i32) -> Result<(), String> {
     if CONTAINER_STARTED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
@@ -158,6 +182,15 @@ fn main() {
     info!("Rootfs path: {:?}", args.rootfs);
     info!("Listen address: {}", args.listen);
     info!("Screen size: {}x{}", args.width, args.height);
+
+    // Extract rootfs if requested
+    if let Some(archive_path) = &args.extract_rootfs {
+        info!("Extracting rootfs from archive...");
+        if let Err(e) = extract_rootfs(archive_path, &args.rootfs) {
+            error!("Failed to extract rootfs: {}", e);
+            std::process::exit(1);
+        }
+    }
 
     // Validate rootfs path
     if !args.rootfs.exists() {
