@@ -63,7 +63,8 @@
         <activity
             android:name=".ui.ServerConsoleActivity"
             android:label="@string/settings_key_server_console"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
