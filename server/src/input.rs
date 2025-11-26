@@ -111,8 +111,8 @@ pub fn handle_touch_event(action: i32, x: f32, y: f32, pointer_id: i32, pressure
 
                 for index in 0..MAX_POINTERS {
                     if mt[index] != 0 {
-                        input_event_write(fd, EV_ABS, ABS_MT_SLOT, pointer_id);
-                        input_event_write(fd, EV_ABS, ABS_MT_TRACKING_ID, pointer_id + 1);
+                        input_event_write(fd, EV_ABS, ABS_MT_SLOT, index as i32);
+                        input_event_write(fd, EV_ABS, ABS_MT_TRACKING_ID, index as i32 + 1);
 
                         if index == 0 {
                             input_event_write(fd, EV_KEY, BTN_TOUCH, 108);
@@ -261,7 +261,7 @@ fn touch_server(touch_path: &PathBuf, width: i32, height: i32) {
 }
 
 fn generate_key_device(key_path: &PathBuf) -> DeviceInfo {
-    let mut info: DeviceInfo = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
+    let mut info: DeviceInfo = unsafe { mem::zeroed() };
 
     info.driver_version = 0x1;
     info.id.product = 0x1;

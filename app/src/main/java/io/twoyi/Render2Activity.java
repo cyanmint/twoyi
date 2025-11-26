@@ -185,7 +185,9 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
                 String host = parts[0];
                 int port = Integer.parseInt(parts[1]);
 
-                mRemoteSocket = new Socket(host, port);
+                mRemoteSocket = new Socket();
+                mRemoteSocket.connect(new java.net.InetSocketAddress(host, port), 10000); // 10 second connection timeout
+                mRemoteSocket.setSoTimeout(30000); // 30 second read timeout
                 mRemoteWriter = new PrintWriter(new OutputStreamWriter(mRemoteSocket.getOutputStream()), true);
                 mRemoteReader = new BufferedReader(new InputStreamReader(mRemoteSocket.getInputStream()));
 

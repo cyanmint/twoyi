@@ -64,18 +64,42 @@ Twoyi is a lightweight Android container. It runs a nearly complete Android syst
 
 ## Building
 
-Twoyi contains two parts:
+Twoyi now contains three parts:
 
-1. The twoyi app, which is actually a UI rendering engine.
-2. The internal ROM of twoyi.
+1. The twoyi Android app, which provides the UI and rendering.
+2. The standalone Rust server (`twoyi-server`), which manages containers and can run independently.
+3. The internal ROM of twoyi.
 
-This repository contains the twoyi app, and the twoyi ROM is currently being turned into open-source.  Therefore, at this moment, the ROM cannot be compiled from source yet.
+This repository contains the twoyi app and the standalone server.
+
+### Architecture
+
+The project has been restructured to separate the container management (Rust) from the UI rendering (Android):
+
+- **Android App**: Opens to a settings page where you can:
+  - Start a local container (original behavior)
+  - Connect to a remote twoyi server
+  - Configure server address and port
+  
+- **Standalone Server**: A command-line binary that:
+  - Runs containers in a specified rootfs directory
+  - Listens on a configurable address:port for remote connections
+  - Handles touch and key input over the network
+
+### Build the Standalone Server
+
+```bash
+cd server
+cargo build --release
+```
+
+The binary will be at `server/target/release/twoyi-server`. See [server/README.md](server/README.md) for usage instructions.
 
 ### Build the App manually
 
 #### Install Rust
 
-Twoyi is partially written in Rust, so it's nessesary to [install Rust and Cargo](https://www.rust-lang.org/tools/install) first.
+Twoyi is partially written in Rust, so it's necessary to [install Rust and Cargo](https://www.rust-lang.org/tools/install) first.
 
 #### Install cargo-xdk
 

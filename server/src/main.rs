@@ -42,7 +42,7 @@ struct Args {
 static CONTAINER_STARTED: AtomicBool = AtomicBool::new(false);
 
 fn start_container(rootfs: &PathBuf, width: i32, height: i32) -> Result<(), String> {
-    if CONTAINER_STARTED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+    if CONTAINER_STARTED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
         return Err("Container already started".to_string());
     }
 
