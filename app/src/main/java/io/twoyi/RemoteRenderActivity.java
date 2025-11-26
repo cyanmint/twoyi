@@ -289,9 +289,7 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                             if (mPixelBuffer == null || mPixelBuffer.capacity() < length) {
                                 mPixelBuffer = ByteBuffer.wrap(mFrameData);
                             } else {
-                                mPixelBuffer.clear();
-                                mPixelBuffer.put(mFrameData, 0, length);
-                                mPixelBuffer.flip();
+                                mPixelBuffer.rewind();
                             }
                             mFrameBitmap.copyPixelsFromBuffer(mPixelBuffer);
                         }
