@@ -287,7 +287,12 @@ public class SettingsActivity extends AppCompatActivity {
                     int maxAttempts = 10;
                     boolean serverReady = false;
                     for (int i = 0; i < maxAttempts && !serverReady; i++) {
-                        Thread.sleep(500);
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException("Server startup interrupted");
+                        }
                         serverReady = ServerManager.testConnection(address);
                     }
 
