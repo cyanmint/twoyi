@@ -71,7 +71,8 @@ public class SettingsActivity extends AppCompatActivity {
         ActionBar actionBar = getSupportActionBar();
 
         if (actionBar != null) {
-            actionBar.setDisplayHomeAsUpEnabled(false);
+            // Show the "up" button only if this activity is not the root of the task
+            actionBar.setDisplayHomeAsUpEnabled(!isTaskRoot());
             actionBar.setBackgroundDrawable(getResources().getDrawable(R.color.colorPrimary));
             actionBar.setTitle(R.string.title_settings);
         }
