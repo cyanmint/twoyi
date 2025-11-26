@@ -120,7 +120,9 @@ public class LogEvents {
             for (String line : serverLog) {
                 pw.println(line);
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable e) {
+            Log.e(TAG, "Failed to write server log to bugreport", e);
+        }
         reportItems.add(ReportItem.create(serverLogFile));
 
         // tombstones

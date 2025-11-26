@@ -23,6 +23,7 @@ import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Manages the twoyi server binary and connections
@@ -82,19 +83,21 @@ public class ServerManager {
     }
 
     private static void notifyOutputListeners(String line) {
+        List<ServerOutputListener> listenersCopy;
         synchronized (serverLog) {
             serverLog.add(line);
             while (serverLog.size() > MAX_LOG_LINES) {
                 serverLog.remove(0);
             }
+            synchronized (outputListeners) {
+                listenersCopy = new ArrayList<>(outputListeners);
+            }
         }
-        synchronized (outputListeners) {
-            for (ServerOutputListener listener : outputListeners) {
-                try {
-                    listener.onServerOutput(line);
-                } catch (Exception e) {
-                    Log.e(TAG, "Error notifying listener", e);
-                }
+        for (ServerOutputListener listener : listenersCopy) {
+            try {
+                listener.onServerOutput(line);
+            } catch (Exception e) {
+                Log.e(TAG, "Error notifying listener", e);
             }
         }
     }
@@ -192,13 +195,17 @@ public class ServerManager {
      * Stop the running server
      */
     public static void stopServer() {
-        if (serverProcess != null) {
-            serverProcess.destroy();
+        Process process = serverProcess;
+        if (process != null) {
+            serverProcess = null;  // Clear reference first
+            process.destroy();
             try {
-                serverProcess.waitFor();
+                if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                }
             } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
             }
-            serverProcess = null;
             Log.i(TAG, "Server stopped");
         }
     }

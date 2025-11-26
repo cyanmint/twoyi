@@ -39,10 +39,20 @@ jobs:
     - name: Install Android NDK
       run: sdkmanager "ndk;26.1.10909125"
 
+    - name: Setup Rust linker for Android
+      run: |
+        mkdir -p server/.cargo
+        echo '[target.aarch64-linux-android]' > server/.cargo/config.toml
+        echo "linker = \"$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android27-clang\"" >> server/.cargo/config.toml
+
     - name: Build twoyi-server for Android
       run: |
         cd server
         cargo build --release --target aarch64-linux-android
+        if [ $? -ne 0 ]; then
+          echo "Build failed!"
+          exit 1
+        fi
         mkdir -p ../app/src/main/assets
         cp target/aarch64-linux-android/release/twoyi-server ../app/src/main/assets/
       env:
