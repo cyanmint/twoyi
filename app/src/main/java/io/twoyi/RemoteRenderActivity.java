@@ -7,25 +7,33 @@
 package io.twoyi;
 
 import android.app.Activity;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import androidx.annotation.NonNull;
 
 import com.cleveroad.androidmanimation.LoadingAnimationView;
 
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.DataInputStream;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -34,30 +42,34 @@ import io.twoyi.utils.NavUtils;
 
 /**
  * Activity for connecting to and rendering from a remote twoyi server
- * 
- * Note: Currently this activity only provides input forwarding to the server.
- * Full screen rendering over TCP is not yet implemented - the server handles
- * display through its local OpenGL context.
+ * Receives framebuffer data over TCP and displays it
  */
 public class RemoteRenderActivity extends Activity implements View.OnTouchListener {
 
     private static final String TAG = "RemoteRenderActivity";
+    private static final byte[] FRAME_HEADER = "FRAME".getBytes();
 
     private ViewGroup mRootView;
     private LoadingAnimationView mLoadingView;
     private TextView mLoadingText;
     private View mLoadingLayout;
-    private StatusView mContentView;
+    private SurfaceView mSurfaceView;
+    private SurfaceHolder mSurfaceHolder;
 
     private Socket mSocket;
     private PrintWriter mWriter;
-    private BufferedReader mReader;
+    private DataInputStream mDataReader;
     private final AtomicBoolean mConnected = new AtomicBoolean(false);
+    private final AtomicBoolean mReceiving = new AtomicBoolean(false);
     private String mServerAddress;
     private int mServerWidth = 1080;
     private int mServerHeight = 1920;
     private String mServerStatus = "unknown";
     private boolean mSetupMode = false;
+    private boolean mStreamingEnabled = false;
+
+    private Bitmap mFrameBitmap;
+    private final Object mBitmapLock = new Object();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -82,64 +94,28 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
 
         mLoadingText.setText(getString(R.string.server_connecting));
 
-        // Create status view
-        mContentView = new StatusView(this);
-        mContentView.setOnTouchListener(this);
+        // Create SurfaceView for rendering
+        mSurfaceView = new SurfaceView(this);
+        mSurfaceView.setOnTouchListener(this);
+        mSurfaceHolder = mSurfaceView.getHolder();
+        mSurfaceHolder.addCallback(new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(SurfaceHolder holder) {
+                Log.i(TAG, "Surface created");
+            }
+
+            @Override
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+                Log.i(TAG, "Surface changed: " + width + "x" + height);
+            }
+
+            @Override
+            public void surfaceDestroyed(SurfaceHolder holder) {
+                Log.i(TAG, "Surface destroyed");
+            }
+        });
 
         connectToServer();
-    }
-
-    private class StatusView extends View {
-        private final android.graphics.Paint mPaint;
-        private final android.graphics.Paint mSmallPaint;
-        
-        public StatusView(android.content.Context context) {
-            super(context);
-            mPaint = new android.graphics.Paint();
-            mPaint.setColor(android.graphics.Color.WHITE);
-            mPaint.setTextSize(48);
-            mPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
-            mPaint.setAntiAlias(true);
-            
-            mSmallPaint = new android.graphics.Paint();
-            mSmallPaint.setColor(android.graphics.Color.LTGRAY);
-            mSmallPaint.setTextSize(32);
-            mSmallPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
-            mSmallPaint.setAntiAlias(true);
-        }
-        
-        @Override
-        protected void onDraw(android.graphics.Canvas canvas) {
-            super.onDraw(canvas);
-            canvas.drawColor(android.graphics.Color.BLACK);
-            
-            if (mConnected.get()) {
-                float centerX = getWidth() / 2f;
-                float centerY = getHeight() / 2f;
-                
-                // Connection status
-                mPaint.setColor(android.graphics.Color.GREEN);
-                canvas.drawText("✓ Connected", centerX, centerY - 150, mPaint);
-                
-                mPaint.setColor(android.graphics.Color.WHITE);
-                canvas.drawText("Server: " + mServerAddress, centerX, centerY - 80, mPaint);
-                
-                // Server info
-                mSmallPaint.setColor(android.graphics.Color.LTGRAY);
-                canvas.drawText("Resolution: " + mServerWidth + "x" + mServerHeight, centerX, centerY, mSmallPaint);
-                canvas.drawText("Status: " + mServerStatus, centerX, centerY + 40, mSmallPaint);
-                
-                if (mSetupMode) {
-                    mSmallPaint.setColor(android.graphics.Color.YELLOW);
-                    canvas.drawText("(Setup Mode - Container not running)", centerX, centerY + 80, mSmallPaint);
-                }
-                
-                // Instructions
-                mSmallPaint.setColor(android.graphics.Color.GRAY);
-                canvas.drawText("Touch events are being forwarded to the server", centerX, centerY + 160, mSmallPaint);
-                canvas.drawText("View server output in Settings > Server Console", centerX, centerY + 200, mSmallPaint);
-            }
-        }
     }
 
     private void connectToServer() {
@@ -154,13 +130,14 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
 
                 Log.i(TAG, "Connecting to " + host + ":" + port);
                 mSocket = new Socket(host, port);
-                mSocket.setSoTimeout(30000);
+                mSocket.setTcpNoDelay(true);
                 
                 mWriter = new PrintWriter(mSocket.getOutputStream(), true);
-                mReader = new BufferedReader(new InputStreamReader(mSocket.getInputStream()));
+                BufferedReader lineReader = new BufferedReader(new InputStreamReader(mSocket.getInputStream()));
+                mDataReader = new DataInputStream(mSocket.getInputStream());
 
-                // Read initial server info
-                String serverInfo = mReader.readLine();
+                // Read initial server info (first line is JSON)
+                String serverInfo = lineReader.readLine();
                 Log.i(TAG, "Server info: " + serverInfo);
 
                 if (serverInfo != null) {
@@ -169,8 +146,15 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                     mServerHeight = info.optInt("height", 1920);
                     mServerStatus = info.optString("status", "unknown");
                     mSetupMode = info.optBoolean("setup_mode", false);
+                    mStreamingEnabled = info.optBoolean("streaming", false);
                     
-                    Log.i(TAG, "Server: " + mServerWidth + "x" + mServerHeight + ", status: " + mServerStatus);
+                    Log.i(TAG, "Server: " + mServerWidth + "x" + mServerHeight + 
+                          ", status: " + mServerStatus + ", streaming: " + mStreamingEnabled);
+                }
+
+                // Create bitmap for framebuffer
+                synchronized (mBitmapLock) {
+                    mFrameBitmap = Bitmap.createBitmap(mServerWidth, mServerHeight, Bitmap.Config.ARGB_8888);
                 }
 
                 mConnected.set(true);
@@ -178,12 +162,19 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                 runOnUiThread(() -> {
                     mLoadingView.stopAnimation();
                     mLoadingLayout.setVisibility(View.GONE);
-                    mRootView.addView(mContentView, 0, new ViewGroup.LayoutParams(
+                    mRootView.addView(mSurfaceView, 0, new ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT));
-                    mContentView.invalidate();
                     Toast.makeText(this, R.string.server_connected, Toast.LENGTH_SHORT).show();
                 });
+
+                // Start receiving frames
+                if (mStreamingEnabled) {
+                    startFrameReceiver();
+                } else {
+                    // Show status message if no streaming
+                    showStatusMessage();
+                }
 
             } catch (Exception e) {
                 Log.e(TAG, "Failed to connect to server", e);
@@ -196,6 +187,131 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
         }, "server-connect").start();
     }
 
+    private void showStatusMessage() {
+        new Thread(() -> {
+            while (mConnected.get() && !mStreamingEnabled) {
+                if (mSurfaceHolder.getSurface().isValid()) {
+                    Canvas canvas = mSurfaceHolder.lockCanvas();
+                    if (canvas != null) {
+                        try {
+                            canvas.drawColor(Color.BLACK);
+                            
+                            Paint paint = new Paint();
+                            paint.setColor(Color.WHITE);
+                            paint.setTextSize(48);
+                            paint.setTextAlign(Paint.Align.CENTER);
+                            paint.setAntiAlias(true);
+                            
+                            float centerX = canvas.getWidth() / 2f;
+                            float centerY = canvas.getHeight() / 2f;
+                            
+                            paint.setColor(Color.GREEN);
+                            canvas.drawText("✓ Connected", centerX, centerY - 100, paint);
+                            
+                            paint.setColor(Color.WHITE);
+                            canvas.drawText("Server: " + mServerAddress, centerX, centerY - 30, paint);
+                            
+                            paint.setTextSize(32);
+                            paint.setColor(Color.LTGRAY);
+                            canvas.drawText("Resolution: " + mServerWidth + "x" + mServerHeight, centerX, centerY + 40, paint);
+                            canvas.drawText("Status: " + mServerStatus, centerX, centerY + 80, paint);
+                            
+                            if (mSetupMode) {
+                                paint.setColor(Color.YELLOW);
+                                canvas.drawText("(Setup Mode)", centerX, centerY + 120, paint);
+                            }
+                        } finally {
+                            mSurfaceHolder.unlockCanvasAndPost(canvas);
+                        }
+                    }
+                }
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        }, "status-display").start();
+    }
+
+    private void startFrameReceiver() {
+        mReceiving.set(true);
+        new Thread(() -> {
+            byte[] headerBuf = new byte[5];
+            byte[] sizeBuf = new byte[12]; // width(4) + height(4) + length(4)
+            
+            while (mReceiving.get() && mConnected.get()) {
+                try {
+                    // Read frame header
+                    mDataReader.readFully(headerBuf);
+                    
+                    // Verify header
+                    boolean validHeader = true;
+                    for (int i = 0; i < FRAME_HEADER.length; i++) {
+                        if (headerBuf[i] != FRAME_HEADER[i]) {
+                            validHeader = false;
+                            break;
+                        }
+                    }
+                    
+                    if (!validHeader) {
+                        Log.w(TAG, "Invalid frame header, skipping byte");
+                        continue;
+                    }
+                    
+                    // Read frame dimensions and length
+                    mDataReader.readFully(sizeBuf);
+                    ByteBuffer bb = ByteBuffer.wrap(sizeBuf).order(ByteOrder.LITTLE_ENDIAN);
+                    int width = bb.getInt();
+                    int height = bb.getInt();
+                    int length = bb.getInt();
+                    
+                    // Read frame data
+                    byte[] frameData = new byte[length];
+                    mDataReader.readFully(frameData);
+                    
+                    // Update bitmap
+                    synchronized (mBitmapLock) {
+                        if (mFrameBitmap != null && 
+                            mFrameBitmap.getWidth() == width && 
+                            mFrameBitmap.getHeight() == height) {
+                            
+                            // Convert RGBA bytes to bitmap
+                            ByteBuffer buffer = ByteBuffer.wrap(frameData);
+                            mFrameBitmap.copyPixelsFromBuffer(buffer);
+                        }
+                    }
+                    
+                    // Draw to surface
+                    if (mSurfaceHolder.getSurface().isValid()) {
+                        Canvas canvas = mSurfaceHolder.lockCanvas();
+                        if (canvas != null) {
+                            try {
+                                synchronized (mBitmapLock) {
+                                    if (mFrameBitmap != null) {
+                                        // Scale bitmap to fit surface
+                                        canvas.drawBitmap(mFrameBitmap, null, 
+                                            new android.graphics.Rect(0, 0, canvas.getWidth(), canvas.getHeight()), 
+                                            null);
+                                    }
+                                }
+                            } finally {
+                                mSurfaceHolder.unlockCanvasAndPost(canvas);
+                            }
+                        }
+                    }
+                    
+                } catch (IOException e) {
+                    if (mReceiving.get()) {
+                        Log.e(TAG, "Error receiving frame", e);
+                    }
+                    break;
+                }
+            }
+            Log.i(TAG, "Frame receiver stopped");
+        }, "frame-receiver").start();
+    }
+
     @Override
     public boolean onTouch(View v, MotionEvent event) {
         if (!mConnected.get() || mWriter == null) {
@@ -206,8 +322,12 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
             int action = event.getActionMasked();
             int pointerIndex = event.getActionIndex();
             int pointerId = event.getPointerId(pointerIndex);
-            float x = event.getX(pointerIndex);
-            float y = event.getY(pointerIndex);
+            
+            // Scale touch coordinates to server resolution
+            float scaleX = (float) mServerWidth / v.getWidth();
+            float scaleY = (float) mServerHeight / v.getHeight();
+            float x = event.getX(pointerIndex) * scaleX;
+            float y = event.getY(pointerIndex) * scaleY;
             float pressure = event.getPressure(pointerIndex);
 
             String json = String.format(Locale.US,
@@ -261,10 +381,18 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
     protected void onDestroy() {
         super.onDestroy();
         mConnected.set(false);
+        mReceiving.set(false);
+        
+        synchronized (mBitmapLock) {
+            if (mFrameBitmap != null) {
+                mFrameBitmap.recycle();
+                mFrameBitmap = null;
+            }
+        }
         
         try {
             if (mWriter != null) mWriter.close();
-            if (mReader != null) mReader.close();
+            if (mDataReader != null) mDataReader.close();
             if (mSocket != null) mSocket.close();
         } catch (Exception e) {
             Log.e(TAG, "Error closing connection", e);

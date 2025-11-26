@@ -14,6 +14,7 @@ use std::thread;
 use std::path::PathBuf;
 
 mod input;
+mod framebuffer;
 
 #[derive(Parser, Debug)]
 #[command(name = "twoyi-server")]
@@ -117,6 +118,14 @@ fn main() {
 
     info!("Server listening on {}", args.bind);
 
+    // Start framebuffer streamer
+    let frame_streamer = Arc::new(framebuffer::FrameStreamer::new(
+        args.width, 
+        args.height, 
+        &args.rootfs.to_string_lossy()
+    ));
+    frame_streamer.start();
+
     let setup_mode = args.setup;
     for stream in listener.incoming() {
         match stream {
@@ -124,8 +133,9 @@ fn main() {
                 let width = args.width;
                 let height = args.height;
                 let rootfs = args.rootfs.clone();
+                let streamer = frame_streamer.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs, setup_mode);
+                    handle_client(stream, width, height, &rootfs, setup_mode, streamer);
                 });
             }
             Err(e) => {
@@ -233,7 +243,7 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool) {
     }
 }
 
-fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool) {
+fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>) {
     let peer_addr = stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
     info!("Client connected from {}", peer_addr);
 
@@ -244,11 +254,17 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
         "height": height,
         "rootfs": rootfs.to_string_lossy(),
         "status": status,
-        "setup_mode": setup_mode
+        "setup_mode": setup_mode,
+        "streaming": true
     });
     
     if let Ok(info_str) = serde_json::to_string(&info) {
         let _ = stream.write_all(format!("{}\n", info_str).as_bytes());
+    }
+
+    // Clone stream for framebuffer streaming
+    if let Ok(fb_stream) = stream.try_clone() {
+        frame_streamer.add_client(fb_stream);
     }
 
     // Handle input events from client
