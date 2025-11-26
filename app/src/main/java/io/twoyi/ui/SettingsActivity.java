@@ -291,6 +291,7 @@ public class SettingsActivity extends AppCompatActivity {
                     }
 
                     if (!serverReady) {
+                        ServerManager.stopServer();
                         throw new IOException("Server did not start within timeout");
                     }
                     activity.runOnUiThread(() -> {
