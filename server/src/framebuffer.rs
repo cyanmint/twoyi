@@ -158,8 +158,8 @@ fn generate_test_pattern(data: &mut [u8], width: i32, height: i32, frame: u32) {
     }
 }
 
-fn send_frame(stream: &TcpStream, data: &[u8], width: i32, height: i32) -> std::io::Result<()> {
-    let mut stream = stream.try_clone()?;
+fn send_frame(stream: &mut TcpStream, data: &[u8], width: i32, height: i32) -> std::io::Result<()> {
+    
     
     // Simple frame protocol: HEADER + width(4) + height(4) + length(4) + data
     stream.write_all(FRAME_HEADER)?;
