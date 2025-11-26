@@ -102,14 +102,48 @@ fn generate_test_pattern(data: &mut [u8], width: i32, height: i32, frame: u32) {
     let w = width as usize;
     let h = height as usize;
     
+    // Create a cleaner test pattern - solid color with time indicator
+    let phase = (frame / 30) % 6; // Change color every second
+    
+    let (base_r, base_g, base_b) = match phase {
+        0 => (50, 50, 50),    // Dark gray
+        1 => (100, 50, 50),   // Dark red
+        2 => (50, 100, 50),   // Dark green
+        3 => (50, 50, 100),   // Dark blue
+        4 => (100, 100, 50),  // Dark yellow
+        _ => (50, 100, 100),  // Dark cyan
+    };
+    
     for y in 0..h {
         for x in 0..w {
             let idx = (y * w + x) * 4;
             if idx + 3 < data.len() {
-                // Create a moving gradient pattern
-                let r = ((x + frame as usize) % 256) as u8;
-                let g = ((y + frame as usize) % 256) as u8;
-                let b = (((x + y) / 2 + frame as usize) % 256) as u8;
+                // Draw a border
+                let border = 20;
+                let is_border = x < border || x >= w - border || y < border || y >= h - border;
+                
+                // Draw center crosshair
+                let center_x = w / 2;
+                let center_y = h / 2;
+                let is_crosshair = (x > center_x - 2 && x < center_x + 2 && y > h/4 && y < 3*h/4) ||
+                                   (y > center_y - 2 && y < center_y + 2 && x > w/4 && x < 3*w/4);
+                
+                // Draw animation indicator at top
+                let indicator_y = 100;
+                let indicator_size = 50;
+                let anim_x = ((frame * 5) as usize) % (w - indicator_size);
+                let is_indicator = y > indicator_y && y < indicator_y + indicator_size && 
+                                   x > anim_x && x < anim_x + indicator_size;
+                
+                let (r, g, b) = if is_border {
+                    (255, 255, 255) // White border
+                } else if is_crosshair {
+                    (255, 0, 0) // Red crosshair
+                } else if is_indicator {
+                    (0, 255, 0) // Green moving indicator
+                } else {
+                    (base_r, base_g, base_b)
+                };
                 
                 data[idx] = r;     // R
                 data[idx + 1] = g; // G

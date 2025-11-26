@@ -26,10 +26,8 @@ import com.cleveroad.androidmanimation.LoadingAnimationView;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.nio.ByteBuffer;
@@ -133,14 +131,18 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                 mSocket.setTcpNoDelay(true);
                 
                 mWriter = new PrintWriter(mSocket.getOutputStream(), true);
-                BufferedReader lineReader = new BufferedReader(new InputStreamReader(mSocket.getInputStream()));
                 mDataReader = new DataInputStream(mSocket.getInputStream());
 
-                // Read initial server info (first line is JSON)
-                String serverInfo = lineReader.readLine();
+                // Read initial server info (first line is JSON, terminated by newline)
+                StringBuilder sb = new StringBuilder();
+                int b;
+                while ((b = mDataReader.read()) != -1 && b != '\n') {
+                    sb.append((char) b);
+                }
+                String serverInfo = sb.toString();
                 Log.i(TAG, "Server info: " + serverInfo);
 
-                if (serverInfo != null) {
+                if (serverInfo.length() > 0) {
                     JSONObject info = new JSONObject(serverInfo);
                     mServerWidth = info.optInt("width", 1080);
                     mServerHeight = info.optInt("height", 1920);
