@@ -31,6 +31,11 @@ public class AppKV {
 
     // 是否应该使用第三方 ROM
     public static final String SHOULD_USE_THIRD_PARTY_ROM = "should_use_third_party_rom";
+
+    // Server address
+    public static final String SERVER_ADDRESS = "server_address";
+    public static final String DEFAULT_SERVER_ADDRESS = "127.0.0.1:8765";
+
     public static boolean getBooleanConfig(Context context,  String key, boolean fallback) {
         return getPref(context).getBoolean(key, fallback);
     }
@@ -38,6 +43,15 @@ public class AppKV {
     @SuppressLint("ApplySharedPref")
     public static void setBooleanConfig(Context context, String key, boolean value) {
         getPref(context).edit().putBoolean(key, value).commit();
+    }
+
+    public static String getStringConfig(Context context, String key, String fallback) {
+        return getPref(context).getString(key, fallback);
+    }
+
+    @SuppressLint("ApplySharedPref")
+    public static void setStringConfig(Context context, String key, String value) {
+        getPref(context).edit().putString(key, value).commit();
     }
 
     private static SharedPreferences getPref(Context context) {

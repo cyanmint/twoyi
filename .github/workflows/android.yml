@@ -39,6 +39,15 @@ jobs:
     - name: Install Android NDK
       run: sdkmanager "ndk;26.1.10909125"
 
+    - name: Build twoyi-server for Android
+      run: |
+        cd server
+        cargo build --release --target aarch64-linux-android
+        mkdir -p ../app/src/main/assets
+        cp target/aarch64-linux-android/release/twoyi-server ../app/src/main/assets/
+      env:
+        ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
@@ -50,3 +59,9 @@ jobs:
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/*.apk
+
+    - name: Upload Server Binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: twoyi-server-android
+        path: server/target/aarch64-linux-android/release/twoyi-server
