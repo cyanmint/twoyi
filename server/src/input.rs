@@ -155,17 +155,13 @@ pub fn handle_touch_event(action: i32, pointer_id: i32, x: f32, y: f32, pressure
                 }
             }
             ACTION_MOVE => {
-                let mut index = 0;
-                while index != MAX_POINTERS {
-                    let mt = G_INPUT_MT.lock().unwrap();
-                    if mt[index] != 0 {
-                        input_event_write(fd, EV_ABS, ABS_MT_SLOT, index as i32);
-                        input_event_write(fd, EV_ABS, ABS_MT_POSITION_X, x as i32);
-                        input_event_write(fd, EV_ABS, ABS_MT_POSITION_Y, y as i32);
-                        input_event_write(fd, EV_ABS, ABS_MT_PRESSURE, pressure as i32);
-                        input_event_write(fd, EV_SYN, SYN_REPORT, SYN_REPORT);
-                    }
-                    index += 1;
+                let mt = G_INPUT_MT.lock().unwrap();
+                if mt[pointer_id as usize] != 0 {
+                    input_event_write(fd, EV_ABS, ABS_MT_SLOT, pointer_id);
+                    input_event_write(fd, EV_ABS, ABS_MT_POSITION_X, x as i32);
+                    input_event_write(fd, EV_ABS, ABS_MT_POSITION_Y, y as i32);
+                    input_event_write(fd, EV_ABS, ABS_MT_PRESSURE, pressure as i32);
+                    input_event_write(fd, EV_SYN, SYN_REPORT, SYN_REPORT);
                 }
             }
             ACTION_CANCEL | ACTION_POINTER_UP => {
