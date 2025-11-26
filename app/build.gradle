@@ -57,6 +57,11 @@ android {
 
 task cargoBuild {
     doLast {
+        def twoyiLib = new File(project.projectDir, "src/main/jniLibs/arm64-v8a/libtwoyi.so")
+        if (twoyiLib.exists()) {
+            println "libtwoyi.so already exists, skipping cargo build"
+            return
+        }
         exec {
             //切换到sh文件所在的目录，执行脚本
             workingDir new File(project.projectDir, "rs")

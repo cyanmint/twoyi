@@ -39,6 +39,11 @@ import androidx.annotation.NonNull;
 
 import com.cleveroad.androidmanimation.LoadingAnimationView;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.net.Socket;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -55,6 +60,10 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
 
     private static final String TAG = "Render2Activity";
 
+    private static final String MODE_LOCAL = "local";
+    private static final String MODE_REMOTE = "remote";
+    private static final String MODE_SERVER = "server";
+
     private SurfaceView mSurfaceView;
 
     private ViewGroup mRootView;
@@ -64,6 +73,13 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
     private View mBootLogView;
 
     private final AtomicBoolean mIsExtracting = new AtomicBoolean(false);
+
+    private String mMode = MODE_LOCAL;
+    private String mServerAddress = null;
+    private Socket mRemoteSocket = null;
+    private PrintWriter mRemoteWriter = null;
+    private BufferedReader mRemoteReader = null;
+    private boolean mRemoteConnected = false;
 
     private final SurfaceHolder.Callback mSurfaceCallback = new SurfaceHolder.Callback() {
         @Override
@@ -77,31 +93,44 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             float xdpi = displayMetrics.xdpi;
             float ydpi = displayMetrics.ydpi;
 
-            Renderer.init(surface, RomManager.getLoaderPath(getApplicationContext()), xdpi, ydpi, (int) getBestFps());
+            if (MODE_LOCAL.equals(mMode) || MODE_SERVER.equals(mMode)) {
+                Renderer.init(surface, RomManager.getLoaderPath(getApplicationContext()), xdpi, ydpi, (int) getBestFps());
+            }
 
-            Log.i(TAG, "surfaceCreated");
+            Log.i(TAG, "surfaceCreated, mode: " + mMode);
         }
 
         @Override
         public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
             Surface surface = holder.getSurface();
-            Renderer.resetWindow(surface, 0, 0, mSurfaceView.getWidth(), mSurfaceView.getHeight());
+            if (MODE_LOCAL.equals(mMode) || MODE_SERVER.equals(mMode)) {
+                Renderer.resetWindow(surface, 0, 0, mSurfaceView.getWidth(), mSurfaceView.getHeight());
+            }
             Log.i(TAG, "surfaceChanged: " + mSurfaceView.getWidth() + "x" + mSurfaceView.getHeight());
         }
 
         @Override
         public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-            Renderer.removeWindow(holder.getSurface());
+            if (MODE_LOCAL.equals(mMode) || MODE_SERVER.equals(mMode)) {
+                Renderer.removeWindow(holder.getSurface());
+            }
             Log.i(TAG, "surfaceDestroyed!");
         }
     };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        boolean started = TwoyiStatusManager.getInstance().isStarted();
-        Log.i(TAG, "onCreate: " + savedInstanceState + " isStarted: " + started);
+        // Get mode from intent
+        mMode = getIntent().getStringExtra("mode");
+        if (mMode == null) {
+            mMode = MODE_LOCAL;
+        }
+        mServerAddress = getIntent().getStringExtra("server_address");
 
-        if (started) {
+        boolean started = TwoyiStatusManager.getInstance().isStarted();
+        Log.i(TAG, "onCreate: " + savedInstanceState + " isStarted: " + started + " mode: " + mMode);
+
+        if (started && MODE_LOCAL.equals(mMode)) {
             // we have been started, but WTF we are onCreate again? just reboot ourself.
             finish();
             RomManager.reboot(this);
@@ -109,7 +138,9 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
         }
 
         // reset state
-        TwoyiStatusManager.getInstance().reset();
+        if (MODE_LOCAL.equals(mMode) || MODE_SERVER.equals(mMode)) {
+            TwoyiStatusManager.getInstance().reset();
+        }
 
         NavUtils.hideNavigation(getWindow());
 
@@ -129,10 +160,86 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
         mLoadingLayout.setVisibility(View.VISIBLE);
         mLoadingView.startAnimation();
 
-        UITips.checkForAndroid12(this, this::bootSystem);
+        if (MODE_REMOTE.equals(mMode)) {
+            // Connect to remote server
+            connectToRemoteServer();
+        } else {
+            UITips.checkForAndroid12(this, this::bootSystem);
+        }
 
         mSurfaceView.setOnTouchListener(this);
+    }
 
+    private void connectToRemoteServer() {
+        if (mServerAddress == null || mServerAddress.isEmpty()) {
+            Toast.makeText(this, R.string.invalid_server_address, Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
+
+        mLoadingText.setText(R.string.connecting_to_server);
+
+        new Thread(() -> {
+            try {
+                String[] parts = mServerAddress.split(":");
+                String host = parts[0];
+                int port = Integer.parseInt(parts[1]);
+
+                mRemoteSocket = new Socket(host, port);
+                mRemoteWriter = new PrintWriter(new OutputStreamWriter(mRemoteSocket.getOutputStream()), true);
+                mRemoteReader = new BufferedReader(new InputStreamReader(mRemoteSocket.getInputStream()));
+
+                // Send ping to verify connection
+                mRemoteWriter.println("{\"type\":\"Ping\"}");
+                String response = mRemoteReader.readLine();
+                
+                if (response != null && response.contains("Pong")) {
+                    mRemoteConnected = true;
+                    
+                    // Send start container command
+                    mRemoteWriter.println("{\"type\":\"StartContainer\"}");
+                    response = mRemoteReader.readLine();
+                    Log.i(TAG, "StartContainer response: " + response);
+
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, R.string.connection_success, Toast.LENGTH_SHORT).show();
+                        mRootView.addView(mSurfaceView, 0);
+                        showBootingProcedure();
+                    });
+                } else {
+                    throw new Exception("Invalid server response");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to connect to server", e);
+                runOnUiThread(() -> {
+                    Toast.makeText(this, getString(R.string.connection_failed, e.getMessage()), Toast.LENGTH_SHORT).show();
+                    finish();
+                });
+            }
+        }, "connect-server").start();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        closeRemoteConnection();
+    }
+
+    private void closeRemoteConnection() {
+        try {
+            if (mRemoteWriter != null) {
+                mRemoteWriter.close();
+            }
+            if (mRemoteReader != null) {
+                mRemoteReader.close();
+            }
+            if (mRemoteSocket != null) {
+                mRemoteSocket.close();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error closing remote connection", e);
+        }
+        mRemoteConnected = false;
     }
 
     @Override
@@ -210,7 +317,7 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
                 } catch (Throwable ignored) {
                 }
 
-                if (!success) {
+                if (!success && !MODE_REMOTE.equals(mMode)) {
                     LogEvents.trackBootFailure(getApplicationContext());
 
                     runOnUiThread(() -> Toast.makeText(getApplicationContext(), R.string.boot_failed, Toast.LENGTH_SHORT).show());
@@ -245,8 +352,54 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
 
     @Override
     public boolean onTouch(View v, MotionEvent event) {
-        Renderer.handleTouch(event);
+        if (MODE_REMOTE.equals(mMode) && mRemoteConnected) {
+            sendTouchEventToServer(event);
+        } else {
+            Renderer.handleTouch(event);
+        }
         return true;
+    }
+
+    private void sendTouchEventToServer(MotionEvent event) {
+        if (mRemoteWriter == null) return;
+
+        new Thread(() -> {
+            try {
+                int action;
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                    case MotionEvent.ACTION_POINTER_DOWN:
+                        action = 0;
+                        break;
+                    case MotionEvent.ACTION_UP:
+                        action = 1;
+                        break;
+                    case MotionEvent.ACTION_MOVE:
+                        action = 2;
+                        break;
+                    case MotionEvent.ACTION_CANCEL:
+                    case MotionEvent.ACTION_POINTER_UP:
+                        action = 3;
+                        break;
+                    default:
+                        return;
+                }
+
+                int pointerIndex = event.getActionIndex();
+                int pointerId = event.getPointerId(pointerIndex);
+                float x = event.getX(pointerIndex);
+                float y = event.getY(pointerIndex);
+                float pressure = event.getPressure(pointerIndex);
+
+                String json = String.format(
+                    "{\"type\":\"TouchEvent\",\"action\":%d,\"x\":%.2f,\"y\":%.2f,\"pointer_id\":%d,\"pressure\":%.2f}",
+                    action, x, y, pointerId, pressure
+                );
+                mRemoteWriter.println(json);
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending touch event", e);
+            }
+        }).start();
     }
 
     @Override
@@ -261,7 +414,28 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
     @Override
     public void onBackPressed() {
         // super.onBackPressed();
-        Renderer.sendKeycode(KeyEvent.KEYCODE_HOME);
+        if (MODE_REMOTE.equals(mMode) && mRemoteConnected) {
+            sendKeyEventToServer(KeyEvent.KEYCODE_HOME, true);
+            sendKeyEventToServer(KeyEvent.KEYCODE_HOME, false);
+        } else {
+            Renderer.sendKeycode(KeyEvent.KEYCODE_HOME);
+        }
+    }
+
+    private void sendKeyEventToServer(int keycode, boolean pressed) {
+        if (mRemoteWriter == null) return;
+
+        new Thread(() -> {
+            try {
+                String json = String.format(
+                    "{\"type\":\"KeyEvent\",\"keycode\":%d,\"pressed\":%b}",
+                    keycode, pressed
+                );
+                mRemoteWriter.println(json);
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending key event", e);
+            }
+        }).start();
     }
 
     private float getBestFps() {

@@ -7,6 +7,7 @@
 package io.twoyi.ui;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -16,8 +17,10 @@ import android.os.Bundle;
 import android.preference.Preference;
 import android.preference.PreferenceFragment;
 import android.provider.DocumentsContract;
+import android.text.InputType;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -38,6 +41,7 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 
 import io.twoyi.R;
+import io.twoyi.Render2Activity;
 import io.twoyi.utils.AppKV;
 import io.twoyi.utils.LogEvents;
 import io.twoyi.utils.RomManager;
@@ -65,7 +69,7 @@ public class SettingsActivity extends AppCompatActivity {
         ActionBar actionBar = getSupportActionBar();
 
         if (actionBar != null) {
-            actionBar.setDisplayHomeAsUpEnabled(true);
+            actionBar.setDisplayHomeAsUpEnabled(false);
             actionBar.setBackgroundDrawable(getResources().getDrawable(R.color.colorPrimary));
             actionBar.setTitle(R.string.title_settings);
         }
@@ -93,10 +97,57 @@ public class SettingsActivity extends AppCompatActivity {
             return findPreference(key);
         }
 
+        private void updateServerAddressSummary() {
+            Preference serverAddress = findPreference(R.string.settings_key_server_address);
+            if (serverAddress != null) {
+                String address = AppKV.getStringConfig(getContext(), AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+                serverAddress.setSummary(getString(R.string.settings_server_address_summary, address));
+            }
+        }
+
         @Override
         public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
 
+            // Server connection preferences
+            Preference serverAddress = findPreference(R.string.settings_key_server_address);
+            Preference startLocalContainer = findPreference(R.string.settings_key_start_local_container);
+            Preference startServer = findPreference(R.string.settings_key_start_server);
+            Preference connectServer = findPreference(R.string.settings_key_connect_server);
+
+            // Update server address summary
+            updateServerAddressSummary();
+
+            serverAddress.setOnPreferenceClickListener(preference -> {
+                showServerAddressDialog(false);
+                return true;
+            });
+
+            startLocalContainer.setOnPreferenceClickListener(preference -> {
+                // Start the local container with original Render2Activity behavior
+                Intent intent = new Intent(getContext(), Render2Activity.class);
+                intent.putExtra("mode", "local");
+                startActivity(intent);
+                return true;
+            });
+
+            startServer.setOnPreferenceClickListener(preference -> {
+                // Show dialog to configure and start server
+                showServerAddressDialog(true);
+                return true;
+            });
+
+            connectServer.setOnPreferenceClickListener(preference -> {
+                // Connect to remote server
+                String address = AppKV.getStringConfig(getContext(), AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+                Intent intent = new Intent(getContext(), Render2Activity.class);
+                intent.putExtra("mode", "remote");
+                intent.putExtra("server_address", address);
+                startActivity(intent);
+                return true;
+            });
+
+            // Original settings
             Preference importApp = findPreference(R.string.settings_key_import_app);
             Preference export = findPreference(R.string.settings_key_manage_files);
 
@@ -201,6 +252,56 @@ public class SettingsActivity extends AppCompatActivity {
                 UIHelper.startActivity(getContext(), AboutActivity.class);
                 return true;
             });
+        }
+
+        private void showServerAddressDialog(boolean startServerAfter) {
+            Context context = getContext();
+            if (context == null) return;
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(context);
+            builder.setTitle(R.string.server_address_dialog_title);
+
+            EditText input = new EditText(context);
+            input.setInputType(InputType.TYPE_CLASS_TEXT);
+            input.setHint(R.string.server_address_hint);
+            String currentAddress = AppKV.getStringConfig(context, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+            input.setText(currentAddress);
+            builder.setView(input);
+
+            builder.setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                String address = input.getText().toString().trim();
+                if (isValidAddress(address)) {
+                    AppKV.setStringConfig(context, AppKV.SERVER_ADDRESS, address);
+                    updateServerAddressSummary();
+                    
+                    if (startServerAfter) {
+                        // Start server mode - this would typically involve starting a local server
+                        // For now, we just save the address and show a message
+                        Toast.makeText(context, "Server configured at " + address, Toast.LENGTH_SHORT).show();
+                        Intent intent = new Intent(getContext(), Render2Activity.class);
+                        intent.putExtra("mode", "server");
+                        intent.putExtra("server_address", address);
+                        startActivity(intent);
+                    }
+                } else {
+                    Toast.makeText(context, R.string.invalid_server_address, Toast.LENGTH_SHORT).show();
+                }
+            });
+
+            builder.setNegativeButton(android.R.string.cancel, (dialog, which) -> dialog.cancel());
+            builder.show();
+        }
+
+        private boolean isValidAddress(String address) {
+            if (address == null || address.isEmpty()) return false;
+            String[] parts = address.split(":");
+            if (parts.length != 2) return false;
+            try {
+                int port = Integer.parseInt(parts[1]);
+                return port > 0 && port < 65536;
+            } catch (NumberFormatException e) {
+                return false;
+            }
         }
 
 
