@@ -10,7 +10,7 @@
         <Preference
             android:key="server_address"
             android:summary="@string/settings_server_address_summary"
-            android:title="@string/settings_server_address_title" />
+            android:title="@string/settings_key_server_address" />
 
         <Preference
             android:key="start_server"
