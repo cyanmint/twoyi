@@ -286,11 +286,11 @@ fn generate_key_device(key_path: &str) -> DeviceInfo {
     info
 }
 
-pub fn send_key_code(_keycode: i32) {
+pub fn send_key_code(keycode: i32) {
     if let Some(ref tx) = *KEY_SENDER.lock().unwrap() {
-        input_event_write(tx, EV_KEY, KEY_BACK, 1);
+        input_event_write(tx, EV_KEY, keycode, 1);
         input_event_write(tx, EV_SYN, SYN_REPORT, SYN_REPORT);
-        input_event_write(tx, EV_KEY, KEY_BACK, 0);
+        input_event_write(tx, EV_KEY, keycode, 0);
     }
 }
 
