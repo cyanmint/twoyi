@@ -214,7 +214,8 @@ public class ServerManager {
      * Check if the server is running
      */
     public static boolean isServerRunning() {
-        return serverProcess != null && serverProcess.isAlive();
+        Process process = serverProcess;
+        return process != null && process.isAlive();
     }
 
     /**
