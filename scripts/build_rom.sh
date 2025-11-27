@@ -115,14 +115,25 @@ desc=Built from redroid (${REDROID_IMAGE}) for headless scrcpy display
 EOF
 
     # Create necessary directories (only if they don't exist)
-    # Use -e to check if path exists (as file, directory, or symlink)
-    [ ! -e "${ROOTFS_OUTPUT}/dev/input" ] && mkdir -p "${ROOTFS_OUTPUT}/dev/input"
-    [ ! -e "${ROOTFS_OUTPUT}/dev/socket" ] && mkdir -p "${ROOTFS_OUTPUT}/dev/socket"
-    [ ! -e "${ROOTFS_OUTPUT}/dev/maps" ] && mkdir -p "${ROOTFS_OUTPUT}/dev/maps"
-    [ ! -e "${ROOTFS_OUTPUT}/sdcard" ] && mkdir -p "${ROOTFS_OUTPUT}/sdcard"
+    # Use -e for regular files/dirs and -L for symlinks (including broken ones)
+    # Skip mkdir if the path exists as any type (file, directory, or symlink)
+    if [ ! -e "${ROOTFS_OUTPUT}/dev/input" ] && [ ! -L "${ROOTFS_OUTPUT}/dev/input" ]; then
+        mkdir -p "${ROOTFS_OUTPUT}/dev/input"
+    fi
+    if [ ! -e "${ROOTFS_OUTPUT}/dev/socket" ] && [ ! -L "${ROOTFS_OUTPUT}/dev/socket" ]; then
+        mkdir -p "${ROOTFS_OUTPUT}/dev/socket"
+    fi
+    if [ ! -e "${ROOTFS_OUTPUT}/dev/maps" ] && [ ! -L "${ROOTFS_OUTPUT}/dev/maps" ]; then
+        mkdir -p "${ROOTFS_OUTPUT}/dev/maps"
+    fi
+    if [ ! -e "${ROOTFS_OUTPUT}/sdcard" ] && [ ! -L "${ROOTFS_OUTPUT}/sdcard" ]; then
+        mkdir -p "${ROOTFS_OUTPUT}/sdcard"
+    fi
     
     # Ensure vendor directory exists
-    [ ! -e "${ROOTFS_OUTPUT}/vendor" ] && mkdir -p "${ROOTFS_OUTPUT}/vendor"
+    if [ ! -e "${ROOTFS_OUTPUT}/vendor" ] && [ ! -L "${ROOTFS_OUTPUT}/vendor" ]; then
+        mkdir -p "${ROOTFS_OUTPUT}/vendor"
+    fi
     
     # Create default.prop for vendor if it doesn't exist
     if [ ! -f "${ROOTFS_OUTPUT}/vendor/default.prop" ]; then
