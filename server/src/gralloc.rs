@@ -12,7 +12,6 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::mem;
 use std::os::unix::io::RawFd;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
@@ -142,8 +141,8 @@ impl GrallocCommand {
 }
 
 /// Gralloc request structure
-#[repr(C, packed)]
-#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GrallocRequest {
     pub command: u32,
     pub buffer_id: u64,
@@ -155,8 +154,31 @@ pub struct GrallocRequest {
     pub size: u64,
 }
 
+impl GrallocRequest {
+    /// Size of the serialized request in bytes
+    pub const SIZE: usize = 4 + 8 + 4 + 4 + 4 + 8 + 8 + 8; // 48 bytes
+    
+    /// Parse a request from a byte buffer using safe methods
+    pub fn from_bytes(buf: &[u8]) -> Option<Self> {
+        if buf.len() < Self::SIZE {
+            return None;
+        }
+        
+        Some(GrallocRequest {
+            command: u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]),
+            buffer_id: u64::from_le_bytes([buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10], buf[11]]),
+            width: u32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]),
+            height: u32::from_le_bytes([buf[16], buf[17], buf[18], buf[19]]),
+            format: u32::from_le_bytes([buf[20], buf[21], buf[22], buf[23]]),
+            usage: u64::from_le_bytes([buf[24], buf[25], buf[26], buf[27], buf[28], buf[29], buf[30], buf[31]]),
+            offset: u64::from_le_bytes([buf[32], buf[33], buf[34], buf[35], buf[36], buf[37], buf[38], buf[39]]),
+            size: u64::from_le_bytes([buf[40], buf[41], buf[42], buf[43], buf[44], buf[45], buf[46], buf[47]]),
+        })
+    }
+}
+
 /// Gralloc response structure  
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct GrallocResponse {
     pub status: i32,
@@ -166,6 +188,26 @@ pub struct GrallocResponse {
     pub stride: u32,
     pub format: u32,
     pub size: u64,
+}
+
+impl GrallocResponse {
+    /// Size of the serialized response in bytes
+    pub const SIZE: usize = 4 + 8 + 4 + 4 + 4 + 4 + 8; // 36 bytes
+    
+    /// Serialize the response to bytes using safe methods
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let mut buf = [0u8; Self::SIZE];
+        
+        buf[0..4].copy_from_slice(&self.status.to_le_bytes());
+        buf[4..12].copy_from_slice(&self.buffer_id.to_le_bytes());
+        buf[12..16].copy_from_slice(&self.width.to_le_bytes());
+        buf[16..20].copy_from_slice(&self.height.to_le_bytes());
+        buf[20..24].copy_from_slice(&self.stride.to_le_bytes());
+        buf[24..28].copy_from_slice(&self.format.to_le_bytes());
+        buf[28..36].copy_from_slice(&self.size.to_le_bytes());
+        
+        buf
+    }
 }
 
 /// The main gralloc server that manages buffers and handles client requests
@@ -300,7 +342,7 @@ fn handle_gralloc_client(
 ) -> std::io::Result<()> {
     info!("Gralloc client connected");
     
-    let mut request_buf = [0u8; mem::size_of::<GrallocRequest>()];
+    let mut request_buf = [0u8; GrallocRequest::SIZE];
     
     loop {
         // Read request
@@ -313,8 +355,13 @@ fn handle_gralloc_client(
             Err(e) => return Err(e),
         }
         
-        let request: GrallocRequest = unsafe { 
-            std::ptr::read_unaligned(request_buf.as_ptr() as *const GrallocRequest) 
+        // Parse request using safe method
+        let request = match GrallocRequest::from_bytes(&request_buf) {
+            Some(req) => req,
+            None => {
+                error!("Failed to parse gralloc request");
+                continue;
+            }
         };
         
         let response = match GrallocCommand::from_u32(request.command) {
@@ -357,14 +404,9 @@ fn handle_gralloc_client(
             continue;
         }
         
-        // Send response
-        let response_bytes = unsafe {
-            std::slice::from_raw_parts(
-                &response as *const GrallocResponse as *const u8,
-                mem::size_of::<GrallocResponse>(),
-            )
-        };
-        stream.write_all(response_bytes)?;
+        // Send response using safe serialization
+        let response_bytes = response.to_bytes();
+        stream.write_all(&response_bytes)?;
     }
     
     Ok(())
@@ -455,14 +497,9 @@ fn handle_lock(
                 size: buffer.size() as u64,
             };
             
-            // Send response first
-            let response_bytes = unsafe {
-                std::slice::from_raw_parts(
-                    &response as *const GrallocResponse as *const u8,
-                    mem::size_of::<GrallocResponse>(),
-                )
-            };
-            if stream.write_all(response_bytes).is_ok() {
+            // Send response first using safe serialization
+            let response_bytes = response.to_bytes();
+            if stream.write_all(&response_bytes).is_ok() {
                 // Then send buffer data
                 let _ = stream.write_all(&buffer.data);
             }
