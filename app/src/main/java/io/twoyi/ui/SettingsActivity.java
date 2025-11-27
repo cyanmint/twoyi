@@ -267,55 +267,14 @@ public class SettingsActivity extends AppCompatActivity {
 
         private void startLocalServer() {
             Activity activity = getActivity();
-            String address = AppKV.getStringConfig(activity, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
-
-            ProgressDialog dialog = UIHelper.getProgressDialog(activity);
-            dialog.setMessage(getString(R.string.server_connecting));
-            dialog.show();
-
-            new Thread(() -> {
-                try {
-                    // Get screen dimensions
-                    DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
-                    int width = metrics.widthPixels;
-                    int height = metrics.heightPixels;
-
-                    // Start the server
-                    ServerManager.startServer(activity, address, width, height);
-
-                    // Wait for server to be ready (with timeout)
-                    int maxAttempts = 10;
-                    boolean serverReady = false;
-                    for (int i = 0; i < maxAttempts && !serverReady; i++) {
-                        try {
-                            Thread.sleep(500);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            throw new IOException("Server startup interrupted");
-                        }
-                        serverReady = ServerManager.testConnection(address);
-                    }
-
-                    if (!serverReady) {
-                        ServerManager.stopServer();
-                        throw new IOException("Server did not start within timeout");
-                    }
-                    activity.runOnUiThread(() -> {
-                        dialog.dismiss();
-                        Toast.makeText(activity, R.string.server_started, Toast.LENGTH_SHORT).show();
-
-                        // Launch the remote renderer activity
-                        Intent intent = new Intent(activity, RemoteRenderActivity.class);
-                        intent.putExtra("server_address", address);
-                        startActivity(intent);
-                    });
-                } catch (Exception e) {
-                    activity.runOnUiThread(() -> {
-                        dialog.dismiss();
-                        Toast.makeText(activity, getString(R.string.server_start_failed, e.getMessage()), Toast.LENGTH_LONG).show();
-                    });
-                }
-            }, "start-local-server").start();
+            
+            // Start the main render activity which provides the OpenGL renderer
+            // The container needs the OpenGL renderer from the app to display graphics
+            Intent intent = new Intent(activity, Render2Activity.class);
+            startActivity(intent);
+            
+            // Note: The standalone server (twoyi-server) is for remote access only
+            // and requires the app to be running for graphics support
         }
 
         private void connectToServer() {
