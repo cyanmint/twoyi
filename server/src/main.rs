@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use clap::Parser;
-use log::{info, error, warn, debug};
+use log::{info, error, debug};
 use std::fs::File;
-use std::io::{Write, BufReader, BufRead};
+use std::io::{Write, Read, BufReader, BufRead};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,78 +15,107 @@ use std::path::PathBuf;
 
 mod input;
 mod framebuffer;
+mod gralloc;
+
+/// Default ADB port for scrcpy connections
+const DEFAULT_ADB_PORT: u16 = 5555;
 
 #[derive(Parser, Debug)]
 #[command(name = "twoyi-server")]
 #[command(about = r#"twoyi container server
 
-IMPORTANT: The container requires graphics support (gralloc HAL) to run properly.
-When running standalone without the Android app, the graphics services (gralloc-2-0,
-surfaceflinger) will crash because they need libOpenglRender.so which requires an
-Android surface.
+This server runs the Android container and exposes the ADB port for scrcpy connections.
+The container uses a headless redroid-based ROM that works with scrcpy for display.
 
-For full functionality, use the twoyi app. The standalone server is intended for:
-- Debugging container startup issues
-- Running headless containers (if graphics services are disabled)
-- Manual environment setup and testing"#, long_about = None)]
+Graphics are rendered via scrcpy which connects to the container's ADB daemon.
+Use 'scrcpy -s <address>:<adb_port>' to connect and view the display.
+
+The server also accepts control connections for configuration and monitoring."#, long_about = None)]
 struct Args {
     /// Path to the rootfs directory
-    #[arg(short, long)]
+    #[arg(short = 'r', long)]
     rootfs: PathBuf,
 
     /// Path to the loader library (libloader.so)
-    #[arg(short, long)]
+    #[arg(short = 'l', long)]
     loader: Option<PathBuf>,
 
-    /// Address and port to bind on (e.g., 0.0.0.0:8765)
-    #[arg(short = 'a', long, default_value = "0.0.0.0:8765")]
+    /// Address and port to bind for control connections (e.g., 0.0.0.0:8765)
+    #[arg(short = 'b', long, default_value = "0.0.0.0:8765")]
     bind: String,
 
-    /// Screen width
-    #[arg(long, default_value_t = 1080)]
+    /// ADB port for scrcpy connections (forwarded to container's adbd)
+    #[arg(short = 'p', long, default_value_t = DEFAULT_ADB_PORT)]
+    adb_port: u16,
+
+    /// Screen width (used by container's display)
+    #[arg(short = 'W', long, default_value_t = 1080)]
     width: i32,
 
-    /// Screen height
-    #[arg(long, default_value_t = 1920)]
+    /// Screen height (used by container's display)
+    #[arg(short = 'H', long, default_value_t = 1920)]
     height: i32,
 
-    /// Verbose mode - show container output in real-time
-    #[arg(short, long)]
-    verbose: bool,
+    /// Screen DPI (used by container's display)
+    #[arg(short = 'd', long, default_value_t = 320)]
+    dpi: i32,
+
+    /// Verbose level: "none" (quiet), "v" (default, info), "vv" (extra verbose, debug)
+    #[arg(short = 'v', long, default_value = "v")]
+    verbose: String,
 
     /// Setup mode - start server without launching container (for manual environment setup)
-    #[arg(short, long)]
+    #[arg(short = 's', long)]
     setup: bool,
+
+    /// Enable fake gralloc device to capture graphics from legacy ROMs (enabled by default)
+    #[arg(short = 'g', long, default_value_t = true)]
+    fake_gralloc: bool,
+
+    /// Disable fake gralloc device (use real framebuffer)
+    #[arg(short = 'G', long)]
+    no_fake_gralloc: bool,
 }
 
 fn main() {
     let args = Args::parse();
     
-    // Set log level based on verbose flag
-    let log_level = if args.verbose { "debug" } else { "info" };
+    // Determine if fake gralloc is enabled (default true, disabled by -G/--no-fake-gralloc)
+    let use_fake_gralloc = args.fake_gralloc && !args.no_fake_gralloc;
+    
+    // Determine verbosity level
+    let (log_level, verbose_output) = match args.verbose.as_str() {
+        "none" => ("warn", false),
+        "vv" => ("debug", true),
+        _ => ("info", true), // "v" or default
+    };
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(log_level)).init();
 
     info!("twoyi-server starting...");
     info!("Rootfs: {:?}", args.rootfs);
-    info!("Bind address: {}", args.bind);
-    info!("Screen size: {}x{}", args.width, args.height);
-    if args.verbose {
-        info!("Verbose mode: enabled");
-    }
+    info!("Control address: {}", args.bind);
+    info!("ADB port for scrcpy: {}", args.adb_port);
+    info!("Screen size: {}x{} @ {}dpi", args.width, args.height, args.dpi);
+    info!("Verbose level: {}", args.verbose);
     if args.setup {
         info!("Setup mode: enabled (container will NOT be started automatically)");
         info!("You can manually set up the environment and start the container later.");
+    }
+    if use_fake_gralloc {
+        info!("Fake gralloc: enabled (capturing graphics from legacy ROMs)");
+    } else {
+        info!("Fake gralloc: disabled (using real framebuffer)");
     }
     if let Some(ref loader) = args.loader {
         info!("Loader: {:?}", loader);
     }
     
-    // Print warning about graphics limitations
-    warn!("=== GRAPHICS LIMITATION ===");
-    warn!("The standalone server cannot provide graphics support (gralloc HAL).");
-    warn!("Graphics services (gralloc-2-0, surfaceflinger) will crash without libOpenglRender.so.");
-    warn!("For full graphics support, use the twoyi Android app instead.");
-    warn!("===========================");
+    // Print scrcpy connection info
+    info!("=== SCRCPY DISPLAY ===");
+    info!("This server uses scrcpy for display via the container's ADB.");
+    info!("Connect with: scrcpy -s <host>:{}", args.adb_port);
+    info!("The container uses a headless redroid-based ROM.");
+    info!("======================");
 
     // Validate rootfs exists
     if !args.rootfs.exists() {
@@ -104,6 +133,23 @@ fn main() {
     let rootfs_str = args.rootfs.to_string_lossy().to_string();
     input::start_input_system(args.width, args.height, &rootfs_str);
 
+    // Start fake gralloc if enabled
+    let fake_gralloc_instance = if use_fake_gralloc {
+        let gralloc = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, args.width, args.height));
+        gralloc.start();
+        info!("Fake gralloc device started - capturing graphics data");
+        Some(gralloc)
+    } else {
+        None
+    };
+
+    // Start ADB port forwarder (for scrcpy connections)
+    let adb_port = args.adb_port;
+    let rootfs_for_adb = args.rootfs.clone();
+    thread::spawn(move || {
+        start_adb_forwarder(adb_port, &rootfs_for_adb);
+    });
+
     // Start container process (unless in setup mode)
     let container_running = Arc::new(AtomicBool::new(true));
     
@@ -111,9 +157,13 @@ fn main() {
         let container_running_clone = container_running.clone();
         let rootfs_clone = args.rootfs.clone();
         let loader_clone = args.loader.clone();
-        let verbose = args.verbose;
+        let verbose_clone = verbose_output;
+        let width = args.width;
+        let height = args.height;
+        let dpi = args.dpi;
+        let use_fake_gralloc_clone = use_fake_gralloc;
         thread::spawn(move || {
-            start_container(&rootfs_clone, loader_clone.as_ref(), verbose);
+            start_container(&rootfs_clone, loader_clone.as_ref(), verbose_clone, width, height, dpi, use_fake_gralloc_clone);
             container_running_clone.store(false, Ordering::SeqCst);
         });
     } else {
@@ -133,17 +183,28 @@ fn main() {
         }
     };
 
-    info!("Server listening on {}", args.bind);
+    info!("Control server listening on {}", args.bind);
 
-    // Start framebuffer streamer
-    let frame_streamer = Arc::new(framebuffer::FrameStreamer::new(
+    // Start framebuffer streamer (for legacy clients)
+    // If fake gralloc is enabled, use the gralloc shared memory path
+    let fb_source = if use_fake_gralloc {
+        format!("{}/dev/shm/gralloc_fb", args.rootfs.to_string_lossy())
+    } else {
+        format!("{}/dev/graphics/fb0", args.rootfs.to_string_lossy())
+    };
+    let frame_streamer = Arc::new(framebuffer::FrameStreamer::new_with_path(
         args.width, 
         args.height, 
-        &args.rootfs.to_string_lossy()
+        &fb_source
     ));
     frame_streamer.start();
 
+    // Keep fake_gralloc_instance alive
+    let _gralloc = fake_gralloc_instance;
+
     let setup_mode = args.setup;
+    let adb_port_for_clients = args.adb_port;
+    let use_fake_gralloc_for_clients = use_fake_gralloc;
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -152,7 +213,7 @@ fn main() {
                 let rootfs = args.rootfs.clone();
                 let streamer = frame_streamer.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs, setup_mode, streamer);
+                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, adb_port_for_clients, use_fake_gralloc_for_clients);
                 });
             }
             Err(e) => {
@@ -162,7 +223,171 @@ fn main() {
     }
 }
 
-fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool) {
+/// Start the ADB port forwarder for scrcpy connections
+/// This listens on the specified port and forwards connections to the container's adbd
+fn start_adb_forwarder(port: u16, rootfs: &PathBuf) {
+    let bind_addr = format!("0.0.0.0:{}", port);
+    
+    let listener = match TcpListener::bind(&bind_addr) {
+        Ok(l) => l,
+        Err(e) => {
+            error!("Failed to bind ADB forwarder to {}: {}", bind_addr, e);
+            error!("scrcpy connections will not work!");
+            return;
+        }
+    };
+    
+    info!("ADB forwarder listening on {}", bind_addr);
+    
+    // The container's adbd listens on a Unix socket at /dev/socket/adbd
+    // We need to forward TCP connections to this socket
+    let adbd_socket_path = rootfs.join("dev/socket/adbd");
+    
+    for stream in listener.incoming() {
+        match stream {
+            Ok(client_stream) => {
+                let socket_path = adbd_socket_path.clone();
+                thread::spawn(move || {
+                    forward_adb_connection(client_stream, &socket_path);
+                });
+            }
+            Err(e) => {
+                error!("Error accepting ADB connection: {}", e);
+            }
+        }
+    }
+}
+
+/// Forward a single ADB connection to the container's adbd socket
+fn forward_adb_connection(mut client: TcpStream, adbd_socket_path: &PathBuf) {
+    let peer_addr = client.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
+    debug!("ADB connection from {}", peer_addr);
+    
+    // Try to connect to the container's adbd Unix socket
+    let mut adbd_socket = match unix_socket::UnixStream::connect(adbd_socket_path) {
+        Ok(s) => s,
+        Err(e) => {
+            debug!("Failed to connect to adbd socket at {:?}: {}", adbd_socket_path, e);
+            // If the Unix socket doesn't exist, the container might expose adbd on localhost
+            // Try connecting to localhost:5037 (default adb daemon port inside container)
+            match TcpStream::connect("127.0.0.1:5037") {
+                Ok(s) => {
+                    debug!("Connected to adbd via TCP fallback");
+                    forward_tcp_streams(client, s);
+                    return;
+                }
+                Err(e2) => {
+                    error!("Failed to connect to adbd: socket error: {}, TCP error: {}", e, e2);
+                    return;
+                }
+            }
+        }
+    };
+    
+    // Forward data bidirectionally between client and adbd
+    let mut client_clone = match client.try_clone() {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to clone client stream: {}", e);
+            return;
+        }
+    };
+    
+    let mut adbd_clone = match adbd_socket.try_clone() {
+        Ok(a) => a,
+        Err(e) => {
+            error!("Failed to clone adbd stream: {}", e);
+            return;
+        }
+    };
+    
+    // Client -> adbd
+    let handle1 = thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        loop {
+            match client.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if adbd_socket.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    
+    // adbd -> Client
+    let handle2 = thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        loop {
+            match adbd_clone.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if client_clone.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    
+    let _ = handle1.join();
+    let _ = handle2.join();
+    
+    debug!("ADB connection from {} closed", peer_addr);
+}
+
+/// Forward data between two TCP streams bidirectionally
+fn forward_tcp_streams(mut client: TcpStream, mut server: TcpStream) {
+    let mut client_clone = match client.try_clone() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    
+    let mut server_clone = match server.try_clone() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    
+    // Client -> Server
+    let handle1 = thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        loop {
+            match client.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if server.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    
+    // Server -> Client
+    let handle2 = thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        loop {
+            match server_clone.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if client_clone.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    
+    let _ = handle1.join();
+    let _ = handle2.join();
+}
+
+fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, width: i32, height: i32, dpi: i32, fake_gralloc: bool) {
     let working_dir = rootfs.to_string_lossy().to_string();
     let log_path = rootfs.parent()
         .map(|p| p.join("log.txt"))
@@ -179,6 +404,25 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool) {
         let loader_str = loader_path.to_string_lossy().to_string();
         info!("Setting TYLOADER={}", loader_str);
         cmd.env("TYLOADER", loader_str);
+    }
+    
+    // Set display configuration for redroid-based ROM
+    // These are passed as kernel boot parameters style environment variables
+    cmd.env("REDROID_WIDTH", width.to_string());
+    cmd.env("REDROID_HEIGHT", height.to_string());
+    cmd.env("REDROID_DPI", dpi.to_string());
+    
+    // Enable ADB over network
+    cmd.env("REDROID_ADB_ENABLED", "1");
+
+    // Set fake gralloc environment variables if enabled
+    if fake_gralloc {
+        info!("Setting up fake gralloc environment");
+        for (key, value) in gralloc::get_gralloc_env_vars() {
+            cmd.env(key, value);
+        }
+        // Tell the container where the gralloc shared memory is
+        cmd.env("GRALLOC_SHM_PATH", format!("{}/dev/shm/gralloc_fb", working_dir));
     }
     
     if verbose {
@@ -260,26 +504,30 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool) {
     }
 }
 
-fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>) {
+fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>, adb_port: u16, fake_gralloc: bool) {
     let peer_addr = stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
     info!("Client connected from {}", peer_addr);
 
     // Send initial info to client
     let status = if setup_mode { "setup" } else { "running" };
+    let display_mode = if fake_gralloc { "fake_gralloc" } else { "scrcpy" };
     let info = serde_json::json!({
         "width": width,
         "height": height,
         "rootfs": rootfs.to_string_lossy(),
         "status": status,
         "setup_mode": setup_mode,
-        "streaming": true
+        "streaming": true,
+        "adb_port": adb_port,
+        "display_mode": display_mode,
+        "fake_gralloc": fake_gralloc
     });
     
     if let Ok(info_str) = serde_json::to_string(&info) {
         let _ = stream.write_all(format!("{}\n", info_str).as_bytes());
     }
 
-    // Clone stream for framebuffer streaming
+    // Clone stream for framebuffer streaming (legacy support)
     if let Ok(fb_stream) = stream.try_clone() {
         frame_streamer.add_client(fb_stream);
     }

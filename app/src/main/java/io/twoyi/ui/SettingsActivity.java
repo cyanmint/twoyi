@@ -43,6 +43,7 @@ import java.nio.file.Files;
 import io.twoyi.R;
 import io.twoyi.Render2Activity;
 import io.twoyi.RemoteRenderActivity;
+import io.twoyi.ScrcpyRenderActivity;
 import io.twoyi.utils.AppKV;
 import io.twoyi.utils.LogEvents;
 import io.twoyi.utils.RomManager;
@@ -104,18 +105,55 @@ public class SettingsActivity extends AppCompatActivity {
         public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
 
+            // Local container settings
+            Preference startLocalLegacy = findPreference("start_local_legacy");
+            startLocalLegacy.setOnPreferenceClickListener(preference -> {
+                startLocalLegacy();
+                return true;
+            });
+
             // Server settings - use literal keys that match the XML
             Preference serverAddress = findPreference("server_address");
+            Preference adbPort = findPreference("adb_port");
             Preference startServer = findPreference("start_server");
             Preference connectServer = findPreference("connect_server");
+            Preference connectScrcpy = findPreference("connect_scrcpy");
             Preference serverConsole = findPreference("server_console");
+
+            // Debug settings
+            android.preference.CheckBoxPreference verboseDebug = (android.preference.CheckBoxPreference) findPreference("verbose_debug");
+            if (verboseDebug != null) {
+                verboseDebug.setChecked(AppKV.getBooleanConfig(getActivity(), AppKV.VERBOSE_DEBUG, false));
+                verboseDebug.setOnPreferenceChangeListener((preference, newValue) -> {
+                    AppKV.setBooleanConfig(getActivity(), AppKV.VERBOSE_DEBUG, (Boolean) newValue);
+                    return true;
+                });
+            }
+
+            android.preference.CheckBoxPreference fakeGralloc = (android.preference.CheckBoxPreference) findPreference("fake_gralloc");
+            if (fakeGralloc != null) {
+                fakeGralloc.setChecked(AppKV.getBooleanConfig(getActivity(), AppKV.FAKE_GRALLOC, true));
+                fakeGralloc.setOnPreferenceChangeListener((preference, newValue) -> {
+                    AppKV.setBooleanConfig(getActivity(), AppKV.FAKE_GRALLOC, (Boolean) newValue);
+                    return true;
+                });
+            }
 
             // Update server address summary with current value
             String currentAddress = AppKV.getStringConfig(getActivity(), AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
             serverAddress.setSummary(getString(R.string.settings_server_address_summary) + "\nCurrent: " + currentAddress);
 
+            // Update ADB port summary with current value
+            int currentAdbPort = AppKV.getIntConfig(getActivity(), AppKV.ADB_PORT, AppKV.DEFAULT_ADB_PORT);
+            adbPort.setSummary(getString(R.string.settings_adb_port_summary) + "\nCurrent: " + currentAdbPort);
+
             serverAddress.setOnPreferenceClickListener(preference -> {
                 showServerAddressDialog();
+                return true;
+            });
+
+            adbPort.setOnPreferenceClickListener(preference -> {
+                showAdbPortDialog();
                 return true;
             });
 
@@ -126,6 +164,11 @@ public class SettingsActivity extends AppCompatActivity {
 
             connectServer.setOnPreferenceClickListener(preference -> {
                 connectToServer();
+                return true;
+            });
+
+            connectScrcpy.setOnPreferenceClickListener(preference -> {
+                connectViaScrcpy();
                 return true;
             });
 
@@ -275,6 +318,26 @@ public class SettingsActivity extends AppCompatActivity {
 
             new Thread(() -> {
                 try {
+                    // Check if rootfs exists, extract if needed
+                    boolean romExist = RomManager.romExist(activity);
+                    if (!romExist) {
+                        activity.runOnUiThread(() -> dialog.setMessage(getString(R.string.extracting_tips)));
+                        
+                        boolean factoryRomUpdated = RomManager.needsUpgrade(activity);
+                        boolean forceInstall = AppKV.getBooleanConfig(activity, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
+                        boolean use3rdRom = AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
+                        
+                        RomManager.extractRootfs(activity.getApplicationContext(), romExist, factoryRomUpdated, forceInstall, use3rdRom);
+                        RomManager.initRootfs(activity.getApplicationContext());
+                        
+                        // Check if extraction succeeded
+                        if (!RomManager.romExist(activity)) {
+                            throw new IOException("Failed to extract rootfs - ROM file may be missing from assets");
+                        }
+                        
+                        activity.runOnUiThread(() -> dialog.setMessage(getString(R.string.server_connecting)));
+                    }
+
                     // Get screen dimensions
                     DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
                     int width = metrics.widthPixels;
@@ -318,6 +381,50 @@ public class SettingsActivity extends AppCompatActivity {
             }, "start-local-server").start();
         }
 
+        private void startLocalLegacy() {
+            Activity activity = getActivity();
+            
+            // Check if rootfs exists
+            boolean romExist = RomManager.romExist(activity);
+            
+            if (!romExist) {
+                // Need to extract rootfs first
+                ProgressDialog dialog = UIHelper.getProgressDialog(activity);
+                dialog.setMessage(getString(R.string.extracting_tips));
+                dialog.show();
+                
+                new Thread(() -> {
+                    boolean factoryRomUpdated = RomManager.needsUpgrade(activity);
+                    boolean forceInstall = AppKV.getBooleanConfig(activity, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
+                    boolean use3rdRom = AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
+                    
+                    RomManager.extractRootfs(activity.getApplicationContext(), false, factoryRomUpdated, forceInstall, use3rdRom);
+                    RomManager.initRootfs(activity.getApplicationContext());
+                    
+                    activity.runOnUiThread(() -> {
+                        dialog.dismiss();
+                        
+                        // Check if extraction succeeded
+                        if (RomManager.romExist(activity)) {
+                            // Start Render2Activity
+                            Intent intent = new Intent(activity, Render2Activity.class);
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                            startActivity(intent);
+                            activity.finish();
+                        } else {
+                            Toast.makeText(activity, getString(R.string.server_start_failed, "Failed to extract rootfs"), Toast.LENGTH_LONG).show();
+                        }
+                    });
+                }, "extract-rootfs-legacy").start();
+            } else {
+                // Rootfs already exists, start Render2Activity directly
+                Intent intent = new Intent(activity, Render2Activity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                startActivity(intent);
+                activity.finish();
+            }
+        }
+
         private void connectToServer() {
             Activity activity = getActivity();
             String address = AppKV.getStringConfig(activity, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
@@ -343,6 +450,52 @@ public class SettingsActivity extends AppCompatActivity {
                     }
                 });
             }, "test-connection").start();
+        }
+
+        private void showAdbPortDialog() {
+            Activity activity = getActivity();
+            int currentPort = AppKV.getIntConfig(activity, AppKV.ADB_PORT, AppKV.DEFAULT_ADB_PORT);
+
+            EditText input = new EditText(activity);
+            input.setText(String.valueOf(currentPort));
+            input.setHint(R.string.adb_port_hint);
+            input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+
+            new AlertDialog.Builder(activity)
+                    .setTitle(R.string.adb_port_dialog_title)
+                    .setView(input)
+                    .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                        String portStr = input.getText().toString().trim();
+                        if (!portStr.isEmpty()) {
+                            try {
+                                int newPort = Integer.parseInt(portStr);
+                                if (newPort > 0 && newPort < 65536) {
+                                    AppKV.setIntConfig(activity, AppKV.ADB_PORT, newPort);
+                                    Preference adbPortPref = findPreference("adb_port");
+                                    adbPortPref.setSummary(getString(R.string.settings_adb_port_summary) + "\nCurrent: " + newPort);
+                                }
+                            } catch (NumberFormatException ignored) {
+                            }
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+        }
+
+        private void connectViaScrcpy() {
+            Activity activity = getActivity();
+            String address = AppKV.getStringConfig(activity, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+            int adbPort = AppKV.getIntConfig(activity, AppKV.ADB_PORT, AppKV.DEFAULT_ADB_PORT);
+
+            // Extract host from address
+            String[] parts = address.split(":");
+            String host = parts[0];
+
+            // Launch the scrcpy renderer activity
+            Intent intent = new Intent(activity, ScrcpyRenderActivity.class);
+            intent.putExtra("server_address", address);
+            intent.putExtra("adb_port", adbPort);
+            startActivity(intent);
         }
 
 

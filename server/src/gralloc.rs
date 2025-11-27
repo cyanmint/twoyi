@@ -1,0 +1,303 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! Fake gralloc device implementation
+//! 
+//! This module creates a fake gralloc0 device that captures graphics data
+//! from the container's gralloc HAL. This allows the legacy ROM (which
+//! requires gralloc) to work without actual graphics hardware.
+
+use log::{info, debug, error, warn};
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Write};
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
+
+/// Gralloc buffer format constants (from Android gralloc.h)
+#[allow(dead_code)]
+pub mod format {
+    pub const HAL_PIXEL_FORMAT_RGBA_8888: u32 = 1;
+    pub const HAL_PIXEL_FORMAT_RGBX_8888: u32 = 2;
+    pub const HAL_PIXEL_FORMAT_RGB_888: u32 = 3;
+    pub const HAL_PIXEL_FORMAT_RGB_565: u32 = 4;
+    pub const HAL_PIXEL_FORMAT_BGRA_8888: u32 = 5;
+}
+
+/// Gralloc operation codes
+#[allow(dead_code)]
+mod op {
+    pub const GRALLOC_OP_ALLOC: u32 = 1;
+    pub const GRALLOC_OP_FREE: u32 = 2;
+    pub const GRALLOC_OP_LOCK: u32 = 3;
+    pub const GRALLOC_OP_UNLOCK: u32 = 4;
+    pub const GRALLOC_OP_REGISTER: u32 = 5;
+    pub const GRALLOC_OP_UNREGISTER: u32 = 6;
+}
+
+/// A captured graphics buffer
+#[derive(Clone)]
+pub struct GrallocBuffer {
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub format: u32,
+    pub data: Vec<u8>,
+}
+
+/// Fake gralloc device manager
+pub struct FakeGralloc {
+    rootfs_path: PathBuf,
+    width: i32,
+    height: i32,
+    running: Arc<AtomicBool>,
+    current_buffer: Arc<Mutex<Option<GrallocBuffer>>>,
+    buffer_listeners: Arc<Mutex<Vec<Box<dyn Fn(&GrallocBuffer) + Send>>>>,
+}
+
+impl FakeGralloc {
+    /// Create a new fake gralloc device manager
+    pub fn new(rootfs_path: &str, width: i32, height: i32) -> Self {
+        FakeGralloc {
+            rootfs_path: PathBuf::from(rootfs_path),
+            width,
+            height,
+            running: Arc::new(AtomicBool::new(false)),
+            current_buffer: Arc::new(Mutex::new(None)),
+            buffer_listeners: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Get the path to the gralloc device
+    fn gralloc_device_path(&self) -> PathBuf {
+        self.rootfs_path.join("dev/graphics/gralloc0")
+    }
+
+    /// Get the path to the gralloc socket (for IPC with container)
+    fn gralloc_socket_path(&self) -> PathBuf {
+        self.rootfs_path.join("dev/socket/gralloc")
+    }
+
+    /// Get the path to the shared memory region for framebuffer
+    fn gralloc_shm_path(&self) -> PathBuf {
+        self.rootfs_path.join("dev/shm/gralloc_fb")
+    }
+
+    /// Create the fake gralloc device files
+    pub fn setup_device(&self) -> Result<(), std::io::Error> {
+        let dev_graphics = self.rootfs_path.join("dev/graphics");
+        let dev_socket = self.rootfs_path.join("dev/socket");
+        let dev_shm = self.rootfs_path.join("dev/shm");
+
+        // Create directories if they don't exist
+        for dir in [&dev_graphics, &dev_socket, &dev_shm] {
+            if !dir.exists() {
+                fs::create_dir_all(dir)?;
+            }
+        }
+
+        // Create the gralloc0 device file
+        // This is a character device that the gralloc HAL opens
+        let gralloc_path = self.gralloc_device_path();
+        if !gralloc_path.exists() {
+            // Create as a regular file (we'll use a named pipe or socket for real IPC)
+            File::create(&gralloc_path)?;
+            info!("Created fake gralloc device at {:?}", gralloc_path);
+        }
+
+        // Set permissions (rw for all)
+        fs::set_permissions(&gralloc_path, fs::Permissions::from_mode(0o666))?;
+
+        // Create the shared memory file for framebuffer data
+        let shm_path = self.gralloc_shm_path();
+        let fb_size = (self.width * self.height * 4) as usize; // RGBA
+        if !shm_path.exists() || fs::metadata(&shm_path).map(|m| m.len() as usize).unwrap_or(0) != fb_size {
+            let mut shm_file = File::create(&shm_path)?;
+            shm_file.set_len(fb_size as u64)?;
+            // Initialize with black
+            shm_file.write_all(&vec![0u8; fb_size])?;
+            info!("Created gralloc shared memory at {:?} ({} bytes)", shm_path, fb_size);
+        }
+        fs::set_permissions(&shm_path, fs::Permissions::from_mode(0o666))?;
+
+        // Create a gralloc info file that tells the HAL where to find things
+        let info_path = self.rootfs_path.join("dev/graphics/gralloc_info");
+        let info_content = format!(
+            "fake_gralloc=1\n\
+             width={}\n\
+             height={}\n\
+             format={}\n\
+             shm_path=/dev/shm/gralloc_fb\n\
+             socket_path=/dev/socket/gralloc\n",
+            self.width, self.height, format::HAL_PIXEL_FORMAT_RGBA_8888
+        );
+        fs::write(&info_path, info_content)?;
+        fs::set_permissions(&info_path, fs::Permissions::from_mode(0o644))?;
+        info!("Created gralloc info at {:?}", info_path);
+
+        Ok(())
+    }
+
+    /// Start monitoring the gralloc device for data
+    pub fn start(&self) {
+        if self.running.swap(true, Ordering::SeqCst) {
+            return; // Already running
+        }
+
+        // Set up the device files
+        if let Err(e) = self.setup_device() {
+            error!("Failed to set up gralloc device: {}", e);
+            return;
+        }
+
+        let running = self.running.clone();
+        let shm_path = self.gralloc_shm_path();
+        let width = self.width as u32;
+        let height = self.height as u32;
+        let current_buffer = self.current_buffer.clone();
+        let listeners = self.buffer_listeners.clone();
+
+        // Start a thread to monitor the shared memory for changes
+        thread::spawn(move || {
+            info!("Gralloc monitor started");
+            let fb_size = (width * height * 4) as usize;
+            let mut last_data: Vec<u8> = vec![0u8; fb_size];
+            let mut frame_count: u64 = 0;
+
+            while running.load(Ordering::SeqCst) {
+                // Try to read from the shared memory file
+                if let Ok(mut file) = OpenOptions::new().read(true).open(&shm_path) {
+                    let mut data = vec![0u8; fb_size];
+                    if file.read_exact(&mut data).is_ok() {
+                        // Check if data changed (compare first few bytes for efficiency)
+                        let changed = data[..std::cmp::min(1024, data.len())] != 
+                                     last_data[..std::cmp::min(1024, last_data.len())];
+                        
+                        if changed {
+                            frame_count += 1;
+                            if frame_count % 60 == 0 {
+                                debug!("Gralloc captured frame {} ({}x{} RGBA)", frame_count, width, height);
+                            }
+
+                            // Create a buffer struct
+                            let buffer = GrallocBuffer {
+                                width,
+                                height,
+                                stride: width,
+                                format: format::HAL_PIXEL_FORMAT_RGBA_8888,
+                                data: data.clone(),
+                            };
+
+                            // Store current buffer
+                            if let Ok(mut current) = current_buffer.lock() {
+                                *current = Some(buffer.clone());
+                            }
+
+                            // Notify listeners
+                            if let Ok(listeners) = listeners.lock() {
+                                for listener in listeners.iter() {
+                                    listener(&buffer);
+                                }
+                            }
+
+                            last_data = data;
+                        }
+                    }
+                }
+
+                // Poll at 60 FPS
+                thread::sleep(Duration::from_millis(16));
+            }
+
+            info!("Gralloc monitor stopped");
+        });
+    }
+
+    /// Stop the gralloc monitor
+    pub fn stop(&self) {
+        self.running.store(false, Ordering::SeqCst);
+    }
+
+    /// Get the current framebuffer data
+    pub fn get_current_buffer(&self) -> Option<GrallocBuffer> {
+        self.current_buffer.lock().ok()?.clone()
+    }
+
+    /// Add a listener for buffer updates
+    pub fn add_buffer_listener<F>(&self, listener: F)
+    where
+        F: Fn(&GrallocBuffer) + Send + 'static,
+    {
+        if let Ok(mut listeners) = self.buffer_listeners.lock() {
+            listeners.push(Box::new(listener));
+        }
+    }
+
+    /// Read framebuffer data directly from the shared memory
+    pub fn read_framebuffer(&self) -> Option<Vec<u8>> {
+        let shm_path = self.gralloc_shm_path();
+        let fb_size = (self.width * self.height * 4) as usize;
+        
+        if let Ok(mut file) = File::open(&shm_path) {
+            let mut data = vec![0u8; fb_size];
+            if file.read_exact(&mut data).is_ok() {
+                return Some(data);
+            }
+        }
+        None
+    }
+
+    /// Write test pattern to the framebuffer (for testing)
+    pub fn write_test_pattern(&self, frame: u32) {
+        let shm_path = self.gralloc_shm_path();
+        let w = self.width as usize;
+        let h = self.height as usize;
+        let fb_size = w * h * 4;
+        
+        let mut data = vec![0u8; fb_size];
+        
+        // Generate a simple test pattern
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) * 4;
+                if idx + 3 < data.len() {
+                    // Color gradient with animation
+                    let r = ((x + frame as usize) % 256) as u8;
+                    let g = ((y + frame as usize / 2) % 256) as u8;
+                    let b = (((x + y) / 4 + frame as usize / 4) % 256) as u8;
+                    
+                    data[idx] = r;
+                    data[idx + 1] = g;
+                    data[idx + 2] = b;
+                    data[idx + 3] = 255;
+                }
+            }
+        }
+        
+        if let Ok(mut file) = OpenOptions::new().write(true).open(&shm_path) {
+            let _ = file.write_all(&data);
+        }
+    }
+}
+
+impl Drop for FakeGralloc {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// Create environment variables for the container to use the fake gralloc
+pub fn get_gralloc_env_vars() -> Vec<(&'static str, &'static str)> {
+    vec![
+        // Tell Android to use our fake gralloc
+        ("ANDROID_GRALLOC_FAKE", "1"),
+        // Disable hardware acceleration
+        ("ANDROID_GL_ES_DRIVER", "swiftshader"),
+        // Use software rendering
+        ("EGL_PLATFORM", "surfaceless"),
+    ]
+}

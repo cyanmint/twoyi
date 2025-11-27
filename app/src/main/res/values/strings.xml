@@ -111,4 +111,28 @@
     <string name="server_address_dialog_title">Server Address</string>
     <string name="server_address_hint">address:port (e.g., 192.168.1.100:8765)</string>
     <string name="default_server_address" translatable="false">127.0.0.1:8765</string>
+
+    <!-- Scrcpy display mode -->
+    <string name="settings_key_adb_port">ADB Port</string>
+    <string name="settings_adb_port_summary">Port for scrcpy connections (default: 5555)</string>
+    <string name="settings_key_connect_scrcpy">Connect via Scrcpy</string>
+    <string name="settings_connect_scrcpy_summary">Connect to container display using scrcpy protocol</string>
+    <string name="scrcpy_connecting">Connecting via scrcpy to %1$s:%2$d...</string>
+    <string name="scrcpy_connected">Connected to: %1$s</string>
+    <string name="scrcpy_disconnected">Disconnected from scrcpy</string>
+    <string name="scrcpy_error">Scrcpy error: %1$s</string>
+    <string name="adb_port_dialog_title">ADB Port</string>
+    <string name="adb_port_hint">Port number (e.g., 5555)</string>
+
+    <!-- Local container settings -->
+    <string name="settings_category_local">Local Container</string>
+    <string name="settings_key_start_local_legacy">Start Local (Legacy Mode)</string>
+    <string name="settings_start_local_legacy_summary">Start the container locally with OpenGL graphics (requires gralloc ROM)</string>
+
+    <!-- Debug settings -->
+    <string name="settings_category_debug">Debug</string>
+    <string name="settings_verbose_debug_title">Verbose Debug Logging</string>
+    <string name="settings_verbose_debug_summary">Enable extra verbose logging for debugging container issues</string>
+    <string name="settings_fake_gralloc_title">Fake Gralloc Device</string>
+    <string name="settings_fake_gralloc_summary">Create a fake gralloc0 device to capture graphics from legacy ROMs</string>
 </resources>

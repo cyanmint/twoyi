@@ -6,11 +6,23 @@
 
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <PreferenceCategory android:title="@string/settings_category_local">
+        <Preference
+            android:key="start_local_legacy"
+            android:summary="@string/settings_start_local_legacy_summary"
+            android:title="@string/settings_key_start_local_legacy" />
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="@string/settings_category_server">
         <Preference
             android:key="server_address"
             android:summary="@string/settings_server_address_summary"
             android:title="@string/settings_key_server_address" />
+
+        <Preference
+            android:key="adb_port"
+            android:summary="@string/settings_adb_port_summary"
+            android:title="@string/settings_key_adb_port" />
 
         <Preference
             android:key="start_server"
@@ -21,6 +33,11 @@
             android:key="connect_server"
             android:summary="@string/settings_connect_server_summary"
             android:title="@string/settings_key_connect_server" />
+
+        <Preference
+            android:key="connect_scrcpy"
+            android:summary="@string/settings_connect_scrcpy_summary"
+            android:title="@string/settings_key_connect_scrcpy" />
 
         <Preference
             android:key="server_console"
@@ -62,6 +79,20 @@
             android:summary="@string/settings_factory_reset_summary"
             android:title="@string/settings_key_factory_reset" />
 
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/settings_category_debug">
+        <CheckBoxPreference
+            android:key="verbose_debug"
+            android:defaultValue="false"
+            android:summary="@string/settings_verbose_debug_summary"
+            android:title="@string/settings_verbose_debug_title" />
+
+        <CheckBoxPreference
+            android:key="fake_gralloc"
+            android:defaultValue="true"
+            android:summary="@string/settings_fake_gralloc_summary"
+            android:title="@string/settings_fake_gralloc_title" />
     </PreferenceCategory>
 
 

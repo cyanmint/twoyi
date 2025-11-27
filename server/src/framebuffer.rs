@@ -26,13 +26,17 @@ impl FrameStreamer {
     pub fn new(width: i32, height: i32, rootfs_path: &str) -> Self {
         // The framebuffer is typically at /dev/graphics/fb0 in the container
         let framebuffer_path = format!("{}/dev/graphics/fb0", rootfs_path);
-        
+        Self::new_with_path(width, height, &framebuffer_path)
+    }
+
+    /// Create a new FrameStreamer with a custom framebuffer path
+    pub fn new_with_path(width: i32, height: i32, framebuffer_path: &str) -> Self {
         FrameStreamer {
             width,
             height,
             clients: Arc::new(Mutex::new(Vec::new())),
             running: Arc::new(AtomicBool::new(false)),
-            framebuffer_path,
+            framebuffer_path: framebuffer_path.to_string(),
         }
     }
     

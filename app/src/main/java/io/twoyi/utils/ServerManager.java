@@ -152,16 +152,30 @@ public class ServerManager {
         // Ensure boot files exist
         RomManager.ensureBootFiles(context);
 
-        // Build command with verbose mode and loader
-        ProcessBuilder pb = new ProcessBuilder(
-            serverBinary.getAbsolutePath(),
-            "--rootfs", rootfsDir.getAbsolutePath(),
-            "--bind", bindAddress,
-            "--width", String.valueOf(width),
-            "--height", String.valueOf(height),
-            "--loader", loaderPath,
-            "--verbose"
-        );
+        // Check if verbose debug is enabled
+        boolean verboseDebug = AppKV.getBooleanConfig(context, AppKV.VERBOSE_DEBUG, false);
+
+        // Build command with optional verbose mode and loader
+        List<String> command = new ArrayList<>();
+        command.add(serverBinary.getAbsolutePath());
+        command.add("--rootfs");
+        command.add(rootfsDir.getAbsolutePath());
+        command.add("--bind");
+        command.add(bindAddress);
+        command.add("--width");
+        command.add(String.valueOf(width));
+        command.add("--height");
+        command.add(String.valueOf(height));
+        command.add("--loader");
+        command.add(loaderPath);
+        
+        if (verboseDebug) {
+            command.add("--verbose");
+            Log.i(TAG, "Verbose debug mode enabled");
+            notifyOutputListeners("Verbose debug mode enabled");
+        }
+        
+        ProcessBuilder pb = new ProcessBuilder(command);
         
         pb.directory(context.getFilesDir());
         pb.redirectErrorStream(true);

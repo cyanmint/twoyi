@@ -49,6 +49,13 @@
             android:exported="false">
         </activity>
 
+        <activity android:name=".ScrcpyRenderActivity"
+            android:theme="@style/Theme.Twoyi.FullScreen"
+            android:label="@string/app_name"
+            android:configChanges="orientation|keyboardHidden"
+            android:exported="false">
+        </activity>
+
 
         <activity
             android:name=".ui.AboutActivity"
