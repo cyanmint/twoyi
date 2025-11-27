@@ -13,6 +13,11 @@
             android:title="@string/settings_key_server_address" />
 
         <Preference
+            android:key="adb_port"
+            android:summary="@string/settings_adb_port_summary"
+            android:title="@string/settings_key_adb_port" />
+
+        <Preference
             android:key="start_server"
             android:summary="@string/settings_start_server_summary"
             android:title="@string/settings_key_start_server" />
@@ -21,6 +26,11 @@
             android:key="connect_server"
             android:summary="@string/settings_connect_server_summary"
             android:title="@string/settings_key_connect_server" />
+
+        <Preference
+            android:key="connect_scrcpy"
+            android:summary="@string/settings_connect_scrcpy_summary"
+            android:title="@string/settings_key_connect_scrcpy" />
 
         <Preference
             android:key="server_console"

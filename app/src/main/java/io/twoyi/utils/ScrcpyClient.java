@@ -1,0 +1,333 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+package io.twoyi.utils;
+
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.media.MediaCodec;
+import android.media.MediaFormat;
+import android.util.Log;
+import android.view.Surface;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.net.Socket;
+import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * Client for connecting to an ADB server and receiving scrcpy video stream.
+ * 
+ * This class handles the scrcpy protocol to receive H.264 encoded video
+ * from the Android container and decode it for display.
+ */
+public class ScrcpyClient {
+    private static final String TAG = "ScrcpyClient";
+
+    // Scrcpy protocol constants
+    private static final int DEVICE_NAME_LENGTH = 64;
+    private static final int POINTER_ID_VIRTUAL_FINGER = -2;
+
+    // Connection state
+    private Socket socket;
+    private DataInputStream inputStream;
+    private DataOutputStream outputStream;
+    private final AtomicBoolean connected = new AtomicBoolean(false);
+    private final AtomicBoolean receiving = new AtomicBoolean(false);
+
+    // Video decoding
+    private MediaCodec decoder;
+    private Surface targetSurface;
+    private int videoWidth;
+    private int videoHeight;
+
+    // Callbacks
+    private ScrcpyListener listener;
+
+    /**
+     * Listener interface for scrcpy events
+     */
+    public interface ScrcpyListener {
+        void onConnected(int width, int height, String deviceName);
+        void onDisconnected();
+        void onError(String message);
+        void onFirstFrameReceived();
+    }
+
+    public ScrcpyClient() {
+    }
+
+    public void setListener(ScrcpyListener listener) {
+        this.listener = listener;
+    }
+
+    public void setSurface(Surface surface) {
+        this.targetSurface = surface;
+    }
+
+    /**
+     * Connect to the scrcpy server via ADB
+     * 
+     * @param host Server host address
+     * @param adbPort ADB port (usually 5555)
+     */
+    public void connect(String host, int adbPort) {
+        if (connected.get()) {
+            Log.w(TAG, "Already connected");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                doConnect(host, adbPort);
+            } catch (Exception e) {
+                Log.e(TAG, "Connection failed", e);
+                if (listener != null) {
+                    listener.onError("Connection failed: " + e.getMessage());
+                }
+            }
+        }, "scrcpy-connect").start();
+    }
+
+    private void doConnect(String host, int adbPort) throws IOException {
+        Log.i(TAG, "Connecting to " + host + ":" + adbPort);
+
+        socket = new Socket(host, adbPort);
+        socket.setTcpNoDelay(true);
+
+        inputStream = new DataInputStream(socket.getInputStream());
+        outputStream = new DataOutputStream(socket.getOutputStream());
+
+        // For scrcpy, we need to:
+        // 1. Push scrcpy-server.jar to device (normally done by scrcpy client)
+        // 2. Start the server via shell command
+        // 3. Connect to the video stream
+        
+        // Since we're connecting to a container that already has scrcpy support,
+        // we'll try to connect to the scrcpy socket directly.
+        // The container's redroid ROM should have scrcpy-server running.
+        
+        // Read device info (scrcpy protocol v1)
+        byte[] deviceNameBytes = new byte[DEVICE_NAME_LENGTH];
+        inputStream.readFully(deviceNameBytes);
+        String deviceName = new String(deviceNameBytes).trim();
+
+        videoWidth = inputStream.readInt();
+        videoHeight = inputStream.readInt();
+
+        Log.i(TAG, "Connected to device: " + deviceName + " (" + videoWidth + "x" + videoHeight + ")");
+
+        connected.set(true);
+
+        if (listener != null) {
+            listener.onConnected(videoWidth, videoHeight, deviceName);
+        }
+
+        // Start receiving video frames
+        startVideoReceiver();
+    }
+
+    private void startVideoReceiver() {
+        if (targetSurface == null) {
+            Log.e(TAG, "No target surface set");
+            return;
+        }
+
+        receiving.set(true);
+
+        new Thread(() -> {
+            try {
+                // Initialize video decoder
+                initDecoder();
+
+                boolean firstFrame = true;
+
+                // Read video frames
+                while (receiving.get() && connected.get()) {
+                    // Read frame header
+                    long pts = inputStream.readLong();
+                    int frameSize = inputStream.readInt();
+
+                    if (frameSize <= 0 || frameSize > 1024 * 1024) {
+                        Log.e(TAG, "Invalid frame size: " + frameSize);
+                        break;
+                    }
+
+                    byte[] frameData = new byte[frameSize];
+                    inputStream.readFully(frameData);
+
+                    // Decode frame
+                    decodeFrame(frameData, pts);
+
+                    if (firstFrame) {
+                        firstFrame = false;
+                        if (listener != null) {
+                            listener.onFirstFrameReceived();
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                if (receiving.get()) {
+                    Log.e(TAG, "Error receiving video", e);
+                    if (listener != null) {
+                        listener.onError("Video stream error: " + e.getMessage());
+                    }
+                }
+            } finally {
+                releaseDecoder();
+            }
+
+            Log.i(TAG, "Video receiver stopped");
+        }, "scrcpy-video").start();
+    }
+
+    private void initDecoder() throws IOException {
+        try {
+            decoder = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
+            MediaFormat format = MediaFormat.createVideoFormat(
+                    MediaFormat.MIMETYPE_VIDEO_AVC, videoWidth, videoHeight);
+            decoder.configure(format, targetSurface, null, 0);
+            decoder.start();
+            Log.i(TAG, "Video decoder initialized");
+        } catch (Exception e) {
+            throw new IOException("Failed to initialize decoder: " + e.getMessage(), e);
+        }
+    }
+
+    private void decodeFrame(byte[] data, long pts) {
+        if (decoder == null) return;
+
+        try {
+            // Get input buffer
+            int inputBufferIndex = decoder.dequeueInputBuffer(10000);
+            if (inputBufferIndex >= 0) {
+                ByteBuffer inputBuffer = decoder.getInputBuffer(inputBufferIndex);
+                if (inputBuffer != null) {
+                    inputBuffer.clear();
+                    inputBuffer.put(data);
+                    decoder.queueInputBuffer(inputBufferIndex, 0, data.length, pts, 0);
+                }
+            }
+
+            // Get output buffer and render
+            MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
+            int outputBufferIndex = decoder.dequeueOutputBuffer(bufferInfo, 0);
+            while (outputBufferIndex >= 0) {
+                decoder.releaseOutputBuffer(outputBufferIndex, true);
+                outputBufferIndex = decoder.dequeueOutputBuffer(bufferInfo, 0);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error decoding frame", e);
+        }
+    }
+
+    private void releaseDecoder() {
+        if (decoder != null) {
+            try {
+                decoder.stop();
+                decoder.release();
+            } catch (Exception e) {
+                Log.e(TAG, "Error releasing decoder", e);
+            }
+            decoder = null;
+        }
+    }
+
+    /**
+     * Send a touch event to the scrcpy server
+     */
+    public void sendTouchEvent(int action, int x, int y, int screenWidth, int screenHeight) {
+        if (!connected.get() || outputStream == null) return;
+
+        new Thread(() -> {
+            try {
+                synchronized (outputStream) {
+                    // Scrcpy control message: inject touch event
+                    outputStream.writeByte(2); // SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT
+                    outputStream.writeByte(action);
+                    outputStream.writeLong(POINTER_ID_VIRTUAL_FINGER);
+                    
+                    // Position
+                    int scaledX = (int) ((float) x * videoWidth / screenWidth);
+                    int scaledY = (int) ((float) y * videoHeight / screenHeight);
+                    outputStream.writeInt(scaledX);
+                    outputStream.writeInt(scaledY);
+                    outputStream.writeShort(videoWidth);
+                    outputStream.writeShort(videoHeight);
+                    
+                    // Pressure and buttons
+                    outputStream.writeShort(0xFFFF); // pressure
+                    outputStream.writeInt(0); // buttons
+                    
+                    outputStream.flush();
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "Error sending touch event", e);
+            }
+        }).start();
+    }
+
+    /**
+     * Send a key event to the scrcpy server
+     */
+    public void sendKeyEvent(int action, int keyCode) {
+        if (!connected.get() || outputStream == null) return;
+
+        new Thread(() -> {
+            try {
+                synchronized (outputStream) {
+                    // Scrcpy control message: inject key event
+                    outputStream.writeByte(0); // SC_CONTROL_MSG_TYPE_INJECT_KEYCODE
+                    outputStream.writeByte(action);
+                    outputStream.writeInt(keyCode);
+                    outputStream.writeInt(0); // repeat
+                    outputStream.writeInt(0); // metaState
+                    outputStream.flush();
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "Error sending key event", e);
+            }
+        }).start();
+    }
+
+    /**
+     * Disconnect from the scrcpy server
+     */
+    public void disconnect() {
+        receiving.set(false);
+        connected.set(false);
+
+        try {
+            if (inputStream != null) inputStream.close();
+            if (outputStream != null) outputStream.close();
+            if (socket != null && !socket.isClosed()) socket.close();
+        } catch (IOException e) {
+            Log.e(TAG, "Error disconnecting", e);
+        }
+
+        inputStream = null;
+        outputStream = null;
+        socket = null;
+
+        if (listener != null) {
+            listener.onDisconnected();
+        }
+    }
+
+    public boolean isConnected() {
+        return connected.get();
+    }
+
+    public int getVideoWidth() {
+        return videoWidth;
+    }
+
+    public int getVideoHeight() {
+        return videoHeight;
+    }
+}

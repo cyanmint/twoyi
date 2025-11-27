@@ -71,3 +71,36 @@ jobs:
       with:
         name: twoyi-server-android
         path: server/target/aarch64-linux-android/release/twoyi-server
+
+  build-rom:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up QEMU for arm64
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: arm64
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y p7zip-full
+
+    - name: Build ROM from redroid
+      run: |
+        chmod +x scripts/build_rom.sh
+        scripts/build_rom.sh --cleanup
+      env:
+        REDROID_IMAGE: docker.io/redroid/redroid:16.0.0-latest
+
+    - name: Upload ROM archive
+      uses: actions/upload-artifact@v4
+      with:
+        name: twoyi-rom-redroid
+        path: |
+          rootfs.7z
+          rom.ini
