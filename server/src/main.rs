@@ -277,17 +277,22 @@ fn handle_adb_client(mut client_stream: TcpStream, width: i32, height: i32, root
             };
             
             // Forward client -> adbd
+            let peer_addr_clone = peer_addr.clone();
             let forward_handle = thread::spawn(move || {
                 let mut buffer = [0u8; 8192];
                 loop {
                     match client_read.read(&mut buffer) {
                         Ok(0) => break, // Connection closed
                         Ok(n) => {
-                            if adbd_write.write_all(&buffer[..n]).is_err() {
+                            if let Err(e) = adbd_write.write_all(&buffer[..n]) {
+                                debug!("Error forwarding to adbd: {}", e);
                                 break;
                             }
                         }
-                        Err(_) => break,
+                        Err(e) => {
+                            debug!("Error reading from client {}: {}", peer_addr_clone, e);
+                            break;
+                        }
                     }
                 }
             });
@@ -298,11 +303,15 @@ fn handle_adb_client(mut client_stream: TcpStream, width: i32, height: i32, root
                 match adbd_stream.read(&mut buffer) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if client_stream.write_all(&buffer[..n]).is_err() {
+                        if let Err(e) = client_stream.write_all(&buffer[..n]) {
+                            debug!("Error forwarding to client {}: {}", peer_addr, e);
                             break;
                         }
                     }
-                    Err(_) => break,
+                    Err(e) => {
+                        debug!("Error reading from adbd: {}", e);
+                        break;
+                    }
                 }
             }
             
