@@ -5,7 +5,7 @@
 use clap::Parser;
 use log::{info, error, warn, debug};
 use std::fs::File;
-use std::io::{Write, BufReader, BufRead};
+use std::io::{Write, Read, BufReader, BufRead};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,21 +14,15 @@ use std::thread;
 use std::path::PathBuf;
 
 mod input;
-mod framebuffer;
 
 #[derive(Parser, Debug)]
 #[command(name = "twoyi-server")]
 #[command(about = r#"twoyi container server
 
-IMPORTANT: The container requires graphics support (gralloc HAL) to run properly.
-When running standalone without the Android app, the graphics services (gralloc-2-0,
-surfaceflinger) will crash because they need libOpenglRender.so which requires an
-Android surface.
+This server uses scrcpy to connect to the container's adbd for graphics display.
+The bound port is the ADB port for scrcpy connections.
 
-For full functionality, use the twoyi app. The standalone server is intended for:
-- Debugging container startup issues
-- Running headless containers (if graphics services are disabled)
-- Manual environment setup and testing"#, long_about = None)]
+For graphics display, connect scrcpy to this server's ADB port."#, long_about = None)]
 struct Args {
     /// Path to the rootfs directory
     #[arg(short, long)]
@@ -38,9 +32,9 @@ struct Args {
     #[arg(short, long)]
     loader: Option<PathBuf>,
 
-    /// Address and port to bind on (e.g., 0.0.0.0:8765)
-    #[arg(short = 'a', long, default_value = "0.0.0.0:8765")]
-    bind: String,
+    /// ADB port to bind for scrcpy connections (e.g., 0.0.0.0:5555)
+    #[arg(short = 'a', long, default_value = "0.0.0.0:5555")]
+    adb_bind: String,
 
     /// Screen width
     #[arg(long, default_value_t = 1080)]
@@ -68,7 +62,7 @@ fn main() {
 
     info!("twoyi-server starting...");
     info!("Rootfs: {:?}", args.rootfs);
-    info!("Bind address: {}", args.bind);
+    info!("ADB bind address: {}", args.adb_bind);
     info!("Screen size: {}x{}", args.width, args.height);
     if args.verbose {
         info!("Verbose mode: enabled");
@@ -81,12 +75,12 @@ fn main() {
         info!("Loader: {:?}", loader);
     }
     
-    // Print warning about graphics limitations
-    warn!("=== GRAPHICS LIMITATION ===");
-    warn!("The standalone server cannot provide graphics support (gralloc HAL).");
-    warn!("Graphics services (gralloc-2-0, surfaceflinger) will crash without libOpenglRender.so.");
-    warn!("For full graphics support, use the twoyi Android app instead.");
-    warn!("===========================");
+    // Print info about scrcpy graphics
+    info!("=== SCRCPY GRAPHICS MODE ===");
+    info!("This server uses scrcpy to connect to the container's adbd for graphics.");
+    info!("Connect scrcpy to this server's ADB port: {}", args.adb_bind);
+    info!("Example: scrcpy --tcpip={}", args.adb_bind);
+    info!("============================");
 
     // Validate rootfs exists
     if !args.rootfs.exists() {
@@ -124,39 +118,32 @@ fn main() {
         }
     }
 
-    // Start TCP server for client connections
-    let listener = match TcpListener::bind(&args.bind) {
+    // Start ADB port forwarder for scrcpy connections
+    let adb_listener = match TcpListener::bind(&args.adb_bind) {
         Ok(l) => l,
         Err(e) => {
-            error!("Failed to bind to {}: {}", args.bind, e);
+            error!("Failed to bind ADB port {}: {}", args.adb_bind, e);
             std::process::exit(1);
         }
     };
 
-    info!("Server listening on {}", args.bind);
-
-    // Start framebuffer streamer
-    let frame_streamer = Arc::new(framebuffer::FrameStreamer::new(
-        args.width, 
-        args.height, 
-        &args.rootfs.to_string_lossy()
-    ));
-    frame_streamer.start();
+    info!("ADB server listening on {} for scrcpy connections", args.adb_bind);
 
     let setup_mode = args.setup;
-    for stream in listener.incoming() {
+    let width = args.width;
+    let height = args.height;
+    let rootfs = args.rootfs.clone();
+    
+    for stream in adb_listener.incoming() {
         match stream {
             Ok(stream) => {
-                let width = args.width;
-                let height = args.height;
-                let rootfs = args.rootfs.clone();
-                let streamer = frame_streamer.clone();
+                let rootfs_clone = rootfs.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs, setup_mode, streamer);
+                    handle_adb_client(stream, width, height, &rootfs_clone, setup_mode);
                 });
             }
             Err(e) => {
-                error!("Error accepting connection: {}", e);
+                error!("Error accepting ADB connection: {}", e);
             }
         }
     }
@@ -260,77 +247,89 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool) {
     }
 }
 
-fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>) {
-    let peer_addr = stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
-    info!("Client connected from {}", peer_addr);
+fn handle_adb_client(mut client_stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool) {
+    let peer_addr = client_stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
+    info!("ADB client connected from {}", peer_addr);
 
-    // Send initial info to client
-    let status = if setup_mode { "setup" } else { "running" };
-    let info = serde_json::json!({
-        "width": width,
-        "height": height,
-        "rootfs": rootfs.to_string_lossy(),
-        "status": status,
-        "setup_mode": setup_mode,
-        "streaming": true
-    });
+    // The container's adbd listens on a Unix socket or local port
+    // We need to forward the TCP connection to the container's adbd
+    let adbd_socket_path = format!("{}/dev/socket/adbd", rootfs.to_string_lossy());
     
-    if let Ok(info_str) = serde_json::to_string(&info) {
-        let _ = stream.write_all(format!("{}\n", info_str).as_bytes());
-    }
-
-    // Clone stream for framebuffer streaming
-    if let Ok(fb_stream) = stream.try_clone() {
-        frame_streamer.add_client(fb_stream);
-    }
-
-    // Handle input events from client
-    let mut reader = match stream.try_clone() {
-        Ok(s) => BufReader::new(s),
-        Err(e) => {
-            error!("Failed to clone stream for reading: {}", e);
-            return;
-        }
-    };
-    let mut line = String::new();
-    
-    loop {
-        line.clear();
-        match reader.read_line(&mut line) {
-            Ok(0) => {
-                info!("Client {} disconnected", peer_addr);
-                break;
-            }
-            Ok(_) => {
-                if let Ok(event) = serde_json::from_str::<serde_json::Value>(&line) {
-                    handle_input_event(&event);
+    // Try to connect to the container's adbd via Unix socket
+    match unix_socket::UnixStream::connect(&adbd_socket_path) {
+        Ok(mut adbd_stream) => {
+            info!("Connected to container's adbd at {}", adbd_socket_path);
+            
+            // Clone streams for bidirectional forwarding
+            let mut client_read = match client_stream.try_clone() {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to clone client stream: {}", e);
+                    return;
+                }
+            };
+            let mut adbd_write = match adbd_stream.try_clone() {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to clone adbd stream: {}", e);
+                    return;
+                }
+            };
+            
+            // Forward client -> adbd
+            let forward_handle = thread::spawn(move || {
+                let mut buffer = [0u8; 8192];
+                loop {
+                    match client_read.read(&mut buffer) {
+                        Ok(0) => break, // Connection closed
+                        Ok(n) => {
+                            if adbd_write.write_all(&buffer[..n]).is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+            
+            // Forward adbd -> client (in current thread)
+            let mut buffer = [0u8; 8192];
+            loop {
+                match adbd_stream.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if client_stream.write_all(&buffer[..n]).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
                 }
             }
-            Err(e) => {
-                error!("Error reading from client {}: {}", peer_addr, e);
-                break;
-            }
+            
+            let _ = forward_handle.join();
+            info!("ADB client {} disconnected", peer_addr);
         }
-    }
-}
-
-fn handle_input_event(event: &serde_json::Value) {
-    if let Some(event_type) = event.get("type").and_then(|v| v.as_str()) {
-        match event_type {
-            "touch" => {
-                let action = event.get("action").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let pointer_id = event.get("pointer_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let x = event.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let y = event.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let pressure = event.get("pressure").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-                
-                input::handle_touch_event(action, pointer_id, x, y, pressure);
+        Err(e) => {
+            warn!("Could not connect to container's adbd at {}: {}", adbd_socket_path, e);
+            
+            // Send error info back to client as JSON
+            let status = if setup_mode { "setup" } else { "waiting_for_adbd" };
+            let info = serde_json::json!({
+                "error": "adbd_not_available",
+                "message": format!("Container's adbd is not yet available: {}", e),
+                "width": width,
+                "height": height,
+                "rootfs": rootfs.to_string_lossy(),
+                "status": status,
+                "setup_mode": setup_mode,
+                "scrcpy_mode": true
+            });
+            
+            if let Ok(info_str) = serde_json::to_string(&info) {
+                let _ = client_stream.write_all(format!("{}\n", info_str).as_bytes());
             }
-            "key" => {
-                let keycode = event.get("keycode").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                input::send_key_code(keycode);
-            }
-            _ => {}
+            
+            info!("ADB client {} notified - adbd not available", peer_addr);
         }
     }
 }

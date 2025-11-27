@@ -93,22 +93,22 @@
     <string name="settings_key_reboot">Reboot</string>
     <string name="replace_rom_unofficial_tips">Sorry, please edit the rom info and avoid using official author name :)</string>
 
-    <!-- Server settings -->
+    <!-- Server settings (scrcpy mode) -->
     <string name="settings_category_server">Server</string>
-    <string name="settings_key_server_address">Server Address</string>
-    <string name="settings_server_address_summary">Set the server address and port (e.g., 192.168.1.100:8765)</string>
+    <string name="settings_key_server_address">ADB Server Address</string>
+    <string name="settings_server_address_summary">Set the ADB server address and port for scrcpy (e.g., 192.168.1.100:5555)</string>
     <string name="settings_key_start_server">Start Local Server</string>
-    <string name="settings_start_server_summary">Start a new container server with built-in binary</string>
+    <string name="settings_start_server_summary">Start a new container server with scrcpy graphics support</string>
     <string name="settings_key_connect_server">Connect to Server</string>
-    <string name="settings_connect_server_summary">Connect to a running server at the configured address</string>
+    <string name="settings_connect_server_summary">Connect to a running server via scrcpy at the configured ADB address</string>
     <string name="settings_key_server_console">Server Console</string>
     <string name="settings_server_console_summary">View server output and logs</string>
     <string name="server_started">Server started successfully</string>
     <string name="server_start_failed">Failed to start server: %1$s</string>
-    <string name="server_connecting">Connecting to server...</string>
-    <string name="server_connected">Connected to server</string>
+    <string name="server_connecting">Connecting to server via scrcpy...</string>
+    <string name="server_connected">Connected to server via scrcpy</string>
     <string name="server_connection_failed">Failed to connect to server: %1$s</string>
-    <string name="server_address_dialog_title">Server Address</string>
-    <string name="server_address_hint">address:port (e.g., 192.168.1.100:8765)</string>
-    <string name="default_server_address" translatable="false">127.0.0.1:8765</string>
+    <string name="server_address_dialog_title">ADB Server Address</string>
+    <string name="server_address_hint">address:port (e.g., 192.168.1.100:5555)</string>
+    <string name="default_server_address" translatable="false">127.0.0.1:5555</string>
 </resources>
