@@ -83,6 +83,7 @@ impl FrameStreamer {
     }
     
     /// Get shared framebuffer data reference for external use
+    #[allow(dead_code)]
     pub fn get_framebuffer_data(&self) -> Arc<RwLock<FramebufferData>> {
         self.gralloc_framebuffer.clone()
     }

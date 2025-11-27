@@ -55,6 +55,7 @@ impl PixelFormat {
 }
 
 /// Buffer usage flags - matches Android's gralloc usage flags
+#[allow(dead_code)]
 #[repr(u64)]
 #[derive(Debug, Clone, Copy)]
 pub enum BufferUsage {
@@ -72,15 +73,18 @@ pub struct BufferDescriptor {
     pub width: u32,
     pub height: u32,
     pub format: PixelFormat,
+    #[allow(dead_code)]
     pub usage: u64,
     pub stride: u32,
 }
 
 /// A gralloc buffer backed by shared memory
 pub struct GrallocBuffer {
+    #[allow(dead_code)]
     pub id: u64,
     pub descriptor: BufferDescriptor,
     pub data: Vec<u8>,
+    #[allow(dead_code)]
     pub fd: Option<RawFd>,
 }
 
@@ -201,6 +205,7 @@ impl GrallocServer {
     }
     
     /// Get the current display buffer data
+    #[allow(dead_code)]
     pub fn get_display_buffer(&self) -> Option<(Vec<u8>, u32, u32)> {
         let display_id = self.display_buffer_id.read().ok()?;
         let buffer_id = (*display_id)?;
@@ -278,6 +283,7 @@ impl GrallocServer {
         Ok(())
     }
     
+    #[allow(dead_code)]
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
     }
@@ -322,7 +328,8 @@ fn handle_gralloc_client(
                 handle_lock(&request, &buffers, &mut stream)
             }
             Some(GrallocCommand::Unlock) => {
-                handle_unlock(&request, &buffers)
+                // Handle unlock with potential buffer data
+                handle_unlock_with_data(&request, &buffers, &mut stream)?
             }
             Some(GrallocCommand::GetInfo) => {
                 handle_get_info(&request, &buffers)
@@ -344,6 +351,11 @@ fn handle_gralloc_client(
                 }
             }
         };
+        
+        // Skip sending response for commands that already sent their own
+        if response.status == -2 {
+            continue;
+        }
         
         // Send response
         let response_bytes = unsafe {
@@ -479,6 +491,54 @@ fn handle_lock(
     }
 }
 
+fn handle_unlock_with_data(
+    request: &GrallocRequest,
+    buffers: &Arc<RwLock<HashMap<u64, GrallocBuffer>>>,
+    stream: &mut UnixStream,
+) -> std::io::Result<GrallocResponse> {
+    let buffer_id = request.buffer_id;
+    let data_size = request.size as usize;
+    
+    // If there's data to receive (size > 0 means client is sending updated buffer data)
+    if data_size > 0 {
+        let mut data = vec![0u8; data_size];
+        stream.read_exact(&mut data)?;
+        
+        if let Ok(mut bufs) = buffers.write() {
+            if let Some(buffer) = bufs.get_mut(&buffer_id) {
+                let copy_len = std::cmp::min(data.len(), buffer.data.len());
+                buffer.data[..copy_len].copy_from_slice(&data[..copy_len]);
+                debug!("Buffer {} updated with {} bytes", buffer_id, copy_len);
+            }
+        }
+    }
+    
+    if let Ok(bufs) = buffers.read() {
+        if bufs.contains_key(&buffer_id) {
+            return Ok(GrallocResponse {
+                status: 0,
+                buffer_id,
+                width: 0,
+                height: 0,
+                stride: 0,
+                format: 0,
+                size: 0,
+            });
+        }
+    }
+    
+    Ok(GrallocResponse {
+        status: -1,
+        buffer_id,
+        width: 0,
+        height: 0,
+        stride: 0,
+        format: 0,
+        size: 0,
+    })
+}
+
+#[allow(dead_code)]
 fn handle_unlock(
     request: &GrallocRequest,
     buffers: &Arc<RwLock<HashMap<u64, GrallocBuffer>>>,
@@ -588,6 +648,7 @@ fn handle_present(
 }
 
 /// Write buffer data to a gralloc buffer
+#[allow(dead_code)]
 pub fn write_buffer_data(
     buffers: &Arc<RwLock<HashMap<u64, GrallocBuffer>>>,
     buffer_id: u64,
