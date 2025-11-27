@@ -11,7 +11,7 @@ set -e
 # Configuration
 REDROID_IMAGE="${REDROID_IMAGE:-docker.io/redroid/redroid:16.0.0-latest}"
 ROOTFS_OUTPUT="${ROOTFS_OUTPUT:-rootfs}"
-ROM_7Z_OUTPUT="${ROM_7Z_OUTPUT:-rootfs.7z}"
+ROM_TAR_OUTPUT="${ROM_TAR_OUTPUT:-rootfs.tar.gz}"
 ROM_INFO_FILE="${ROM_INFO_FILE:-rom.ini}"
 
 # Colors for output
@@ -37,8 +37,8 @@ check_dependencies() {
     
     local missing_deps=()
     
-    # Check for required tools
-    for cmd in docker 7z; do
+    # Check for required tools (tar and gzip are standard on most systems)
+    for cmd in docker tar gzip; do
         if ! command -v "$cmd" &> /dev/null; then
             missing_deps+=("$cmd")
         fi
@@ -52,8 +52,8 @@ check_dependencies() {
                 docker)
                     echo "  - Docker: https://docs.docker.com/get-docker/"
                     ;;
-                7z)
-                    echo "  - p7zip: apt-get install p7zip-full OR brew install p7zip"
+                tar|gzip)
+                    echo "  - $dep: Usually pre-installed on Unix systems"
                     ;;
             esac
         done
@@ -174,21 +174,22 @@ EOF
 }
 
 create_rom_archive() {
-    log_info "Creating ROM archive: ${ROM_7Z_OUTPUT}"
+    log_info "Creating ROM archive: ${ROM_TAR_OUTPUT}"
     
     # Remove existing archive if present
-    rm -f "${ROM_7Z_OUTPUT}"
+    rm -f "${ROM_TAR_OUTPUT}"
     
-    # Create 7z archive with the rootfs
-    # Use maximum compression for smaller size
-    (cd "${ROOTFS_OUTPUT}" && 7z a -t7z -m0=lzma2 -mx=9 -mfb=64 -md=32m -ms=on "../${ROM_7Z_OUTPUT}" .)
+    # Create tar.gz archive with the rootfs contents directly (no rootfs subdirectory)
+    # Files will be extracted directly to the target directory
+    # Use -C to change to rootfs directory and archive "." to avoid rootfs/ prefix
+    tar -czf "${ROM_TAR_OUTPUT}" -C "${ROOTFS_OUTPUT}" .
     
     # Calculate MD5 for verification
     local md5sum
     if command -v md5sum &> /dev/null; then
-        md5sum=$(md5sum "${ROM_7Z_OUTPUT}" | awk '{print $1}')
+        md5sum=$(md5sum "${ROM_TAR_OUTPUT}" | awk '{print $1}')
     elif command -v md5 &> /dev/null; then
-        md5sum=$(md5 -q "${ROM_7Z_OUTPUT}")
+        md5sum=$(md5 -q "${ROM_TAR_OUTPUT}")
     else
         md5sum="unknown"
     fi
@@ -196,12 +197,12 @@ create_rom_archive() {
     # Update rom.ini with MD5
     sed -i "s/^md5=.*/md5=${md5sum}/" "${ROOTFS_OUTPUT}/${ROM_INFO_FILE}" 2>/dev/null || true
     
-    log_info "ROM archive created: ${ROM_7Z_OUTPUT}"
+    log_info "ROM archive created: ${ROM_TAR_OUTPUT}"
     log_info "MD5: ${md5sum}"
     
     # Show archive size
     local size
-    size=$(du -h "${ROM_7Z_OUTPUT}" | awk '{print $1}')
+    size=$(du -h "${ROM_TAR_OUTPUT}" | awk '{print $1}')
     log_info "Archive size: ${size}"
 }
 
@@ -225,14 +226,14 @@ show_usage() {
     echo "Options:"
     echo "  -i, --image IMAGE    Redroid Docker image (default: ${REDROID_IMAGE})"
     echo "  -o, --output DIR     Output directory for rootfs (default: ${ROOTFS_OUTPUT})"
-    echo "  -a, --archive FILE   Output 7z archive name (default: ${ROM_7Z_OUTPUT})"
+    echo "  -a, --archive FILE   Output tar.gz archive name (default: ${ROM_TAR_OUTPUT})"
     echo "  -c, --cleanup        Remove rootfs directory after creating archive"
     echo "  -h, --help           Show this help message"
     echo ""
     echo "Examples:"
     echo "  $0                                    # Use defaults"
     echo "  $0 -i redroid/redroid:14.0.0-latest  # Use different redroid version"
-    echo "  $0 -o /tmp/rootfs -a rom.7z          # Custom output paths"
+    echo "  $0 -o /tmp/rootfs -a rom.tar.gz      # Custom output paths"
 }
 
 main() {
@@ -250,7 +251,7 @@ main() {
                 shift 2
                 ;;
             -a|--archive)
-                ROM_7Z_OUTPUT="$2"
+                ROM_TAR_OUTPUT="$2"
                 shift 2
                 ;;
             -c|--cleanup)
@@ -272,7 +273,7 @@ main() {
     log_info "Building twoyi ROM from redroid image"
     log_info "Image: ${REDROID_IMAGE}"
     log_info "Output: ${ROOTFS_OUTPUT}"
-    log_info "Archive: ${ROM_7Z_OUTPUT}"
+    log_info "Archive: ${ROM_TAR_OUTPUT}"
     echo ""
     
     check_dependencies
@@ -291,11 +292,11 @@ main() {
     
     echo ""
     log_info "ROM build complete!"
-    log_info "ROM archive: ${ROM_7Z_OUTPUT}"
+    log_info "ROM archive: ${ROM_TAR_OUTPUT}"
     log_info "ROM info: ${ROM_INFO_FILE}"
     echo ""
     log_info "To use this ROM with twoyi:"
-    log_info "  1. Copy ${ROM_7Z_OUTPUT} to app/src/main/assets/rootfs.7z"
+    log_info "  1. Copy ${ROM_TAR_OUTPUT} to app/src/main/assets/rootfs.tar.gz"
     log_info "  2. Copy ${ROM_INFO_FILE} to app/src/main/assets/rom.ini"
     log_info "  3. Build the app"
 }

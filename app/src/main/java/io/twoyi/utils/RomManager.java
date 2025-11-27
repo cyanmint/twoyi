@@ -16,15 +16,15 @@ import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
-import com.hzy.libp7zip.P7ZipApi;
 import com.topjohnwu.superuser.Shell;
 
-import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
-import org.apache.commons.compress.archivers.sevenz.SevenZFile;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -50,7 +50,7 @@ public final class RomManager {
 
     private static final String TAG = "RomManager";
 
-    private static final String ROOTFS_NAME = "rootfs.7z";
+    private static final String ROOTFS_NAME = "rootfs.tar.gz";
 
     private static final String ROM_INFO_FILE = "rom.ini";
 
@@ -58,7 +58,7 @@ public final class RomManager {
 
     private static final String LOADER_FILE = "libloader.so";
 
-    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.7z";
+    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.tar.gz";
 
     private RomManager() {
     }
@@ -184,16 +184,23 @@ public final class RomManager {
     }
 
     public static RomInfo getRomInfo(File rom) {
-        try (SevenZFile zFile = new SevenZFile(rom)) {
+        try (FileInputStream fis = new FileInputStream(rom);
+             BufferedInputStream bis = new BufferedInputStream(fis);
+             GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
+             TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
 
-            SevenZArchiveEntry entry;
-
-            while ((entry = zFile.getNextEntry()) != null) {
-                if (entry.getName().equals("rootfs/rom.ini")) {
-                    byte[] content = new byte[(int) entry.getSize()];
-                    zFile.read(content, 0, content.length);
-                    ByteArrayInputStream bais = new ByteArrayInputStream(content);
-                    return getRomInfo(bais);
+            TarArchiveEntry entry;
+            while ((entry = tais.getNextTarEntry()) != null) {
+                // Archive has files directly at root (./rom.ini or rom.ini)
+                String name = entry.getName();
+                if (name.equals("rom.ini") || name.equals("./rom.ini")) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = tais.read(buffer)) > 0) {
+                        baos.write(buffer, 0, len);
+                    }
+                    return getRomInfo(new java.io.ByteArrayInputStream(baos.toByteArray()));
                 }
             }
         } catch (Throwable e) {
@@ -279,20 +286,85 @@ public final class RomManager {
         return err == 0;
     }
 
-    public static int extractRootfs(Context context, File rootfs7z) {
+    public static int extractRootfs(Context context, File rootfsTarGz) {
+        File rootfsDir = getRootfsDir(context);
+        
+        try (FileInputStream fis = new FileInputStream(rootfsTarGz);
+             BufferedInputStream bis = new BufferedInputStream(fis);
+             GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
+             TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
 
-        int cpu = Runtime.getRuntime().availableProcessors();
-        return P7ZipApi.executeCommand(String.format(Locale.US, "7z x -mmt=%d -aoa '%s' '-o%s'",
-                cpu, rootfs7z, context.getDataDir()));
+            TarArchiveEntry entry;
+            while ((entry = tais.getNextTarEntry()) != null) {
+                // Get the entry name and strip leading "./" if present
+                String name = entry.getName();
+                if (name.startsWith("./")) {
+                    name = name.substring(2);
+                }
+                if (name.isEmpty()) {
+                    continue;
+                }
+                
+                File outputFile = new File(rootfsDir, name);
+                
+                if (entry.isDirectory()) {
+                    if (!outputFile.exists() && !outputFile.mkdirs()) {
+                        Log.w(TAG, "Failed to create directory: " + outputFile);
+                    }
+                } else if (entry.isSymbolicLink()) {
+                    // Handle symbolic links
+                    String linkTarget = entry.getLinkName();
+                    try {
+                        Files.deleteIfExists(outputFile.toPath());
+                        Files.createSymbolicLink(outputFile.toPath(), Paths.get(linkTarget));
+                    } catch (IOException e) {
+                        Log.w(TAG, "Failed to create symlink: " + outputFile + " -> " + linkTarget, e);
+                    }
+                } else {
+                    // Regular file
+                    File parent = outputFile.getParentFile();
+                    if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                        Log.w(TAG, "Failed to create parent directory: " + parent);
+                    }
+                    
+                    try (FileOutputStream fos = new FileOutputStream(outputFile);
+                         BufferedOutputStream bos = new BufferedOutputStream(fos)) {
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = tais.read(buffer)) > 0) {
+                            bos.write(buffer, 0, len);
+                        }
+                    }
+                    
+                    // Set file permissions if available
+                    int mode = entry.getMode();
+                    if ((mode & 0111) != 0) {
+                        outputFile.setExecutable(true, false);
+                    }
+                }
+            }
+            return 0; // Success
+        } catch (Throwable e) {
+            Log.e(TAG, "Failed to extract rootfs", e);
+            LogEvents.trackError(e);
+            return -1; // Error
+        }
     }
 
     public static boolean extractRootfsInAssets(Context context) {
 
+        // Ensure rootfs directory exists
+        File rootfsDir = getRootfsDir(context);
+        if (!rootfsDir.exists() && !rootfsDir.mkdirs()) {
+            Log.e(TAG, "Failed to create rootfs directory");
+            return false;
+        }
+
         // read assets
         long t1 = SystemClock.elapsedRealtime();
-        File rootfs7z = context.getFileStreamPath(ROOTFS_NAME);
+        File rootfsTarGz = context.getFileStreamPath(ROOTFS_NAME);
         try (InputStream inputStream = new BufferedInputStream(context.getAssets().open(ROOTFS_NAME));
-             OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfs7z))) {
+             OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfsTarGz))) {
             byte[] buffer = new byte[10240];
             int count;
             while ((count = inputStream.read(buffer)) > 0) {
@@ -303,11 +375,11 @@ public final class RomManager {
         }
         long t2 = SystemClock.elapsedRealtime();
 
-        int ret = extractRootfs(context, rootfs7z);
+        int ret = extractRootfs(context, rootfsTarGz);
 
         long t3 = SystemClock.elapsedRealtime();
 
-        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " un7z: " + (t3 - t2) + "ret: " + ret);
+        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " untar: " + (t3 - t2) + "ret: " + ret);
 
         return ret == 0;
     }
