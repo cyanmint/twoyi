@@ -104,11 +104,11 @@ public class SettingsActivity extends AppCompatActivity {
         public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
 
-            // Server settings
-            Preference serverAddress = findPreference(R.string.settings_key_server_address);
-            Preference startServer = findPreference(R.string.settings_key_start_server);
-            Preference connectServer = findPreference(R.string.settings_key_connect_server);
-            Preference serverConsole = findPreference(R.string.settings_key_server_console);
+            // Server settings - use literal keys that match the XML
+            Preference serverAddress = findPreference("server_address");
+            Preference startServer = findPreference("start_server");
+            Preference connectServer = findPreference("connect_server");
+            Preference serverConsole = findPreference("server_console");
 
             // Update server address summary with current value
             String currentAddress = AppKV.getStringConfig(getActivity(), AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
@@ -257,7 +257,7 @@ public class SettingsActivity extends AppCompatActivity {
                         String newAddress = input.getText().toString().trim();
                         if (!newAddress.isEmpty()) {
                             AppKV.setStringConfig(activity, AppKV.SERVER_ADDRESS, newAddress);
-                            Preference serverAddressPref = findPreference(R.string.settings_key_server_address);
+                            Preference serverAddressPref = findPreference("server_address");
                             serverAddressPref.setSummary(getString(R.string.settings_server_address_summary) + "\nCurrent: " + newAddress);
                         }
                     })
