@@ -292,6 +292,26 @@ public class SettingsActivity extends AppCompatActivity {
 
             new Thread(() -> {
                 try {
+                    // Check if rootfs exists, extract if needed
+                    boolean romExist = RomManager.romExist(activity);
+                    if (!romExist) {
+                        activity.runOnUiThread(() -> dialog.setMessage(getString(R.string.extracting_tips)));
+                        
+                        boolean factoryRomUpdated = RomManager.needsUpgrade(activity);
+                        boolean forceInstall = AppKV.getBooleanConfig(activity, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
+                        boolean use3rdRom = AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
+                        
+                        RomManager.extractRootfs(activity.getApplicationContext(), romExist, factoryRomUpdated, forceInstall, use3rdRom);
+                        RomManager.initRootfs(activity.getApplicationContext());
+                        
+                        // Check if extraction succeeded
+                        if (!RomManager.romExist(activity)) {
+                            throw new IOException("Failed to extract rootfs - ROM file may be missing from assets");
+                        }
+                        
+                        activity.runOnUiThread(() -> dialog.setMessage(getString(R.string.server_connecting)));
+                    }
+
                     // Get screen dimensions
                     DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
                     int width = metrics.widthPixels;
