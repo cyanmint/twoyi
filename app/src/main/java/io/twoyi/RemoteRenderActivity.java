@@ -7,6 +7,7 @@
 package io.twoyi;
 
 import android.app.Activity;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -25,11 +26,12 @@ import com.cleveroad.androidmanimation.LoadingAnimationView;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
+import java.io.DataInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -37,12 +39,13 @@ import io.twoyi.utils.AppKV;
 import io.twoyi.utils.NavUtils;
 
 /**
- * Activity for connecting to a remote twoyi server via scrcpy/ADB
- * Uses scrcpy protocol to connect to the container's adbd for graphics display
+ * Activity for connecting to and rendering from a remote twoyi server
+ * Receives framebuffer data over TCP and displays it
  */
 public class RemoteRenderActivity extends Activity implements View.OnTouchListener {
 
     private static final String TAG = "RemoteRenderActivity";
+    private static final byte[] FRAME_HEADER = "FRAME".getBytes();
 
     private ViewGroup mRootView;
     private LoadingAnimationView mLoadingView;
@@ -53,13 +56,22 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
 
     private Socket mSocket;
     private PrintWriter mWriter;
+    private DataInputStream mDataReader;
     private final AtomicBoolean mConnected = new AtomicBoolean(false);
+    private final AtomicBoolean mReceiving = new AtomicBoolean(false);
     private String mServerAddress;
     private int mServerWidth = 1080;
     private int mServerHeight = 1920;
     private String mServerStatus = "unknown";
     private boolean mSetupMode = false;
-    private boolean mScrcpyMode = true;
+    private boolean mStreamingEnabled = false;
+
+    private Bitmap mFrameBitmap;
+    private final Object mBitmapLock = new Object();
+    
+    // Reusable buffers to reduce GC pressure
+    private byte[] mFrameData;
+    private ByteBuffer mPixelBuffer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -118,45 +130,37 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                 String host = parts[0];
                 int port = Integer.parseInt(parts[1]);
 
-                Log.i(TAG, "Connecting to ADB server at " + host + ":" + port);
+                Log.i(TAG, "Connecting to " + host + ":" + port);
                 mSocket = new Socket(host, port);
                 mSocket.setTcpNoDelay(true);
                 
                 mWriter = new PrintWriter(mSocket.getOutputStream(), true);
-                BufferedReader reader = new BufferedReader(new InputStreamReader(mSocket.getInputStream()));
+                mDataReader = new DataInputStream(mSocket.getInputStream());
 
-                // Read initial server info (first line may be JSON if adbd not ready)
-                String serverInfo = reader.readLine();
-                Log.i(TAG, "Server response: " + serverInfo);
+                // Read initial server info (first line is JSON, terminated by newline)
+                StringBuilder sb = new StringBuilder();
+                int b;
+                while ((b = mDataReader.read()) != -1 && b != '\n') {
+                    sb.append((char) b);
+                }
+                String serverInfo = sb.toString();
+                Log.i(TAG, "Server info: " + serverInfo);
 
-                if (serverInfo != null && serverInfo.startsWith("{")) {
-                    // JSON response means adbd is not yet available or error
+                if (serverInfo.length() > 0) {
                     JSONObject info = new JSONObject(serverInfo);
                     mServerWidth = info.optInt("width", 1080);
                     mServerHeight = info.optInt("height", 1920);
                     mServerStatus = info.optString("status", "unknown");
                     mSetupMode = info.optBoolean("setup_mode", false);
-                    mScrcpyMode = info.optBoolean("scrcpy_mode", true);
-                    
-                    String error = info.optString("error", null);
-                    if (error != null) {
-                        Log.w(TAG, "Server reported error: " + error);
-                        String message = info.optString("message", "Unknown error");
-                        runOnUiThread(() -> {
-                            mLoadingView.stopAnimation();
-                            mLoadingText.setText("Waiting for container's ADB...\n" + message);
-                        });
-                        // Show status and wait
-                        mConnected.set(true);
-                        showScrcpyInstructions();
-                        return;
-                    }
+                    mStreamingEnabled = info.optBoolean("streaming", false);
                     
                     Log.i(TAG, "Server: " + mServerWidth + "x" + mServerHeight + 
-                          ", status: " + mServerStatus + ", scrcpy_mode: " + mScrcpyMode);
-                } else {
-                    // Raw ADB protocol response - scrcpy should handle this
-                    Log.i(TAG, "Received ADB protocol data, scrcpy can connect");
+                          ", status: " + mServerStatus + ", streaming: " + mStreamingEnabled);
+                }
+
+                // Create bitmap for framebuffer
+                synchronized (mBitmapLock) {
+                    mFrameBitmap = Bitmap.createBitmap(mServerWidth, mServerHeight, Bitmap.Config.ARGB_8888);
                 }
 
                 mConnected.set(true);
@@ -170,8 +174,13 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                     Toast.makeText(this, R.string.server_connected, Toast.LENGTH_SHORT).show();
                 });
 
-                // Show scrcpy connection instructions
-                showScrcpyInstructions();
+                // Start receiving frames
+                if (mStreamingEnabled) {
+                    startFrameReceiver();
+                } else {
+                    // Show status message if no streaming
+                    showStatusMessage();
+                }
 
             } catch (Exception e) {
                 Log.e(TAG, "Failed to connect to server", e);
@@ -184,9 +193,9 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
         }, "server-connect").start();
     }
 
-    private void showScrcpyInstructions() {
+    private void showStatusMessage() {
         new Thread(() -> {
-            while (mConnected.get()) {
+            while (mConnected.get() && !mStreamingEnabled) {
                 if (mSurfaceHolder.getSurface().isValid()) {
                     Canvas canvas = mSurfaceHolder.lockCanvas();
                     if (canvas != null) {
@@ -203,31 +212,19 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                             float centerY = canvas.getHeight() / 2f;
                             
                             paint.setColor(Color.GREEN);
-                            canvas.drawText("✓ Connected to Server", centerX, centerY - 200, paint);
+                            canvas.drawText("✓ Connected", centerX, centerY - 100, paint);
                             
                             paint.setColor(Color.WHITE);
-                            paint.setTextSize(36);
-                            canvas.drawText("ADB Address: " + mServerAddress, centerX, centerY - 130, paint);
+                            canvas.drawText("Server: " + mServerAddress, centerX, centerY - 30, paint);
                             
                             paint.setTextSize(32);
-                            paint.setColor(Color.CYAN);
-                            canvas.drawText("=== SCRCPY GRAPHICS MODE ===", centerX, centerY - 60, paint);
-                            
                             paint.setColor(Color.LTGRAY);
-                            paint.setTextSize(28);
-                            canvas.drawText("Use scrcpy to connect to the container for graphics:", centerX, centerY, paint);
-                            
-                            paint.setColor(Color.YELLOW);
-                            canvas.drawText("scrcpy --tcpip=" + mServerAddress, centerX, centerY + 50, paint);
-                            
-                            paint.setColor(Color.LTGRAY);
-                            paint.setTextSize(24);
-                            canvas.drawText("Resolution: " + mServerWidth + "x" + mServerHeight, centerX, centerY + 110, paint);
-                            canvas.drawText("Status: " + mServerStatus, centerX, centerY + 145, paint);
+                            canvas.drawText("Resolution: " + mServerWidth + "x" + mServerHeight, centerX, centerY + 40, paint);
+                            canvas.drawText("Status: " + mServerStatus, centerX, centerY + 80, paint);
                             
                             if (mSetupMode) {
                                 paint.setColor(Color.YELLOW);
-                                canvas.drawText("(Setup Mode)", centerX, centerY + 180, paint);
+                                canvas.drawText("(Setup Mode)", centerX, centerY + 120, paint);
                             }
                         } finally {
                             mSurfaceHolder.unlockCanvasAndPost(canvas);
@@ -240,26 +237,149 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
                     break;
                 }
             }
-        }, "scrcpy-instructions").start();
+        }, "status-display").start();
+    }
+
+    private void startFrameReceiver() {
+        mReceiving.set(true);
+        new Thread(() -> {
+            byte[] headerBuf = new byte[5];
+            byte[] sizeBuf = new byte[12]; // width(4) + height(4) + length(4)
+            
+            while (mReceiving.get() && mConnected.get()) {
+                try {
+                    // Read frame header
+                    mDataReader.readFully(headerBuf);
+                    
+                    // Verify header
+                    boolean validHeader = true;
+                    for (int i = 0; i < FRAME_HEADER.length; i++) {
+                        if (headerBuf[i] != FRAME_HEADER[i]) {
+                            validHeader = false;
+                            break;
+                        }
+                    }
+                    
+                    if (!validHeader) {
+                        Log.e(TAG, "Invalid frame header received, connection may be corrupted");
+                        break; // Exit the loop and close connection
+                    }
+                    
+                    // Read frame dimensions and length
+                    mDataReader.readFully(sizeBuf);
+                    ByteBuffer bb = ByteBuffer.wrap(sizeBuf).order(ByteOrder.LITTLE_ENDIAN);
+                    int width = bb.getInt();
+                    int height = bb.getInt();
+                    int length = bb.getInt();
+                    
+                    // Read frame data - reuse buffer if possible
+                    if (mFrameData == null || mFrameData.length < length) {
+                        mFrameData = new byte[length];
+                        mPixelBuffer = null; // Need to recreate ByteBuffer wrapper
+                    }
+                    mDataReader.readFully(mFrameData, 0, length);
+                    
+                    // Update bitmap
+                    synchronized (mBitmapLock) {
+                        if (mFrameBitmap != null && 
+                            mFrameBitmap.getWidth() == width && 
+                            mFrameBitmap.getHeight() == height) {
+                            
+                            // Reuse ByteBuffer wrapper if possible
+                            if (mPixelBuffer == null || mPixelBuffer.capacity() < length) {
+                                mPixelBuffer = ByteBuffer.wrap(mFrameData);
+                            } else {
+                                mPixelBuffer.rewind();
+                            }
+                            mFrameBitmap.copyPixelsFromBuffer(mPixelBuffer);
+                        }
+                    }
+                    
+                    // Draw to surface
+                    if (mSurfaceHolder.getSurface().isValid()) {
+                        Canvas canvas = mSurfaceHolder.lockCanvas();
+                        if (canvas != null) {
+                            try {
+                                synchronized (mBitmapLock) {
+                                    if (mFrameBitmap != null) {
+                                        // Scale bitmap to fit surface
+                                        canvas.drawBitmap(mFrameBitmap, null, 
+                                            new android.graphics.Rect(0, 0, canvas.getWidth(), canvas.getHeight()), 
+                                            null);
+                                    }
+                                }
+                            } finally {
+                                mSurfaceHolder.unlockCanvasAndPost(canvas);
+                            }
+                        }
+                    }
+                    
+                } catch (IOException e) {
+                    if (mReceiving.get()) {
+                        Log.e(TAG, "Error receiving frame", e);
+                    }
+                    break;
+                }
+            }
+            Log.i(TAG, "Frame receiver stopped");
+        }, "frame-receiver").start();
     }
 
     @Override
     public boolean onTouch(View v, MotionEvent event) {
-        // Touch events will be handled by scrcpy directly
-        // This is just for basic interaction when scrcpy is not connected
+        if (!mConnected.get() || mWriter == null) {
+            return true;
+        }
+
+        try {
+            int action = event.getActionMasked();
+            int pointerIndex = event.getActionIndex();
+            int pointerId = event.getPointerId(pointerIndex);
+            
+            // Scale touch coordinates to server resolution
+            float scaleX = (float) mServerWidth / v.getWidth();
+            float scaleY = (float) mServerHeight / v.getHeight();
+            float x = event.getX(pointerIndex) * scaleX;
+            float y = event.getY(pointerIndex) * scaleY;
+            float pressure = event.getPressure(pointerIndex);
+
+            String json = String.format(Locale.US,
+                "{\"type\":\"touch\",\"action\":%d,\"pointer_id\":%d,\"x\":%.1f,\"y\":%.1f,\"pressure\":%.1f}",
+                action, pointerId, x, y, pressure);
+            
+            mWriter.println(json);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error sending touch event", e);
+        }
         return true;
     }
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        // Key events will be handled by scrcpy directly
+        if (mConnected.get() && mWriter != null) {
+            try {
+                String json = String.format(Locale.US, "{\"type\":\"key\",\"keycode\":%d}", keyCode);
+                mWriter.println(json);
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending key event", e);
+            }
+        }
         return super.onKeyDown(keyCode, event);
     }
 
     @Override
     public void onBackPressed() {
-        // Allow back to exit the activity
-        super.onBackPressed();
+        if (mConnected.get() && mWriter != null) {
+            try {
+                String json = String.format(Locale.US, "{\"type\":\"key\",\"keycode\":%d}", KeyEvent.KEYCODE_BACK);
+                mWriter.println(json);
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending back key", e);
+            }
+        } else {
+            super.onBackPressed();
+        }
     }
 
     @Override
@@ -274,10 +394,21 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
     protected void onDestroy() {
         super.onDestroy();
         mConnected.set(false);
+        mReceiving.set(false);
+        
+        synchronized (mBitmapLock) {
+            if (mFrameBitmap != null) {
+                mFrameBitmap.recycle();
+                mFrameBitmap = null;
+            }
+        }
         
         try {
             if (mWriter != null) {
                 mWriter.close();
+            }
+            if (mDataReader != null) {
+                mDataReader.close();
             }
             if (mSocket != null && !mSocket.isClosed()) {
                 mSocket.close();

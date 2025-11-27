@@ -32,9 +32,9 @@ public class AppKV {
     // 是否应该使用第三方 ROM
     public static final String SHOULD_USE_THIRD_PARTY_ROM = "should_use_third_party_rom";
 
-    // Server address (ADB port for scrcpy connections)
+    // Server address
     public static final String SERVER_ADDRESS = "server_address";
-    public static final String DEFAULT_SERVER_ADDRESS = "127.0.0.1:5555";
+    public static final String DEFAULT_SERVER_ADDRESS = "127.0.0.1:8765";
 
     public static boolean getBooleanConfig(Context context,  String key, boolean fallback) {
         return getPref(context).getBoolean(key, fallback);

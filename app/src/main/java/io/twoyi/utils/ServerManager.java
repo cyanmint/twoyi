@@ -152,7 +152,7 @@ public class ServerManager {
         // Ensure boot files exist
         RomManager.ensureBootFiles(context);
 
-        // Build command with verbose mode, loader, and ADB bind address
+        // Build command with verbose mode and loader
         ProcessBuilder pb = new ProcessBuilder(
             serverBinary.getAbsolutePath(),
             "--rootfs", rootfsDir.getAbsolutePath(),
