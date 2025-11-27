@@ -9,6 +9,7 @@ package io.twoyi.utils;
 import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.os.Build;
+import android.util.Log;
 
 import com.microsoft.appcenter.crashes.Crashes;
 import com.microsoft.appcenter.crashes.ingestion.models.ErrorAttachmentLog;
@@ -33,6 +34,7 @@ import java.util.zip.ZipOutputStream;
 
 public class LogEvents {
 
+    private static final String TAG = "LogEvents";
     private static final RuntimeException BOOT_FAILURE = new RuntimeException("BootFailureException");
 
     public static void trackError(Throwable e) {
@@ -113,6 +115,18 @@ public class LogEvents {
 
         reportItems.add(ReportItem.create(logcatFile));
 
+        // server log
+        File serverLogFile = new File(context.getCacheDir(), "server_log.txt");
+        try (PrintWriter pw = new PrintWriter(new FileWriter(serverLogFile))) {
+            List<String> serverLog = ServerManager.getServerLog();
+            for (String line : serverLog) {
+                pw.println(line);
+            }
+        } catch (Throwable e) {
+            Log.e(TAG, "Failed to write server log to bugreport", e);
+        }
+        reportItems.add(ReportItem.create(serverLogFile));
+
         // tombstones
         File rootfsDir = RomManager.getRootfsDir(context);
         File romDataDir = new File(rootfsDir, "data");
@@ -162,6 +176,9 @@ public class LogEvents {
             PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             pw.println("PACKAGE: " + packageInfo.packageName);
             pw.println("VERSION: " + packageInfo.versionName);
+            
+            // Server status
+            pw.println("SERVER_RUNNING: " + ServerManager.isServerRunning());
         } catch (Throwable ignored) {}
 
         reportItems.add(ReportItem.create(buildInfo));

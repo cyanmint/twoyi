@@ -7,6 +7,7 @@
 package io.twoyi.ui;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -16,8 +17,10 @@ import android.os.Bundle;
 import android.preference.Preference;
 import android.preference.PreferenceFragment;
 import android.provider.DocumentsContract;
+import android.util.DisplayMetrics;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -38,9 +41,12 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 
 import io.twoyi.R;
+import io.twoyi.Render2Activity;
+import io.twoyi.RemoteRenderActivity;
 import io.twoyi.utils.AppKV;
 import io.twoyi.utils.LogEvents;
 import io.twoyi.utils.RomManager;
+import io.twoyi.utils.ServerManager;
 import io.twoyi.utils.UIHelper;
 
 /**
@@ -65,7 +71,8 @@ public class SettingsActivity extends AppCompatActivity {
         ActionBar actionBar = getSupportActionBar();
 
         if (actionBar != null) {
-            actionBar.setDisplayHomeAsUpEnabled(true);
+            // Show the "up" button only if this activity is not the root of the task
+            actionBar.setDisplayHomeAsUpEnabled(!isTaskRoot());
             actionBar.setBackgroundDrawable(getResources().getDrawable(R.color.colorPrimary));
             actionBar.setTitle(R.string.title_settings);
         }
@@ -97,6 +104,36 @@ public class SettingsActivity extends AppCompatActivity {
         public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
 
+            // Server settings - use literal keys that match the XML
+            Preference serverAddress = findPreference("server_address");
+            Preference startServer = findPreference("start_server");
+            Preference connectServer = findPreference("connect_server");
+            Preference serverConsole = findPreference("server_console");
+
+            // Update server address summary with current value
+            String currentAddress = AppKV.getStringConfig(getActivity(), AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+            serverAddress.setSummary(getString(R.string.settings_server_address_summary) + "\nCurrent: " + currentAddress);
+
+            serverAddress.setOnPreferenceClickListener(preference -> {
+                showServerAddressDialog();
+                return true;
+            });
+
+            startServer.setOnPreferenceClickListener(preference -> {
+                startLocalServer();
+                return true;
+            });
+
+            connectServer.setOnPreferenceClickListener(preference -> {
+                connectToServer();
+                return true;
+            });
+
+            serverConsole.setOnPreferenceClickListener(preference -> {
+                UIHelper.startActivity(getContext(), ServerConsoleActivity.class);
+                return true;
+            });
+
             Preference importApp = findPreference(R.string.settings_key_import_app);
             Preference export = findPreference(R.string.settings_key_manage_files);
 
@@ -123,6 +160,7 @@ public class SettingsActivity extends AppCompatActivity {
 
             shutdown.setOnPreferenceClickListener(preference -> {
                 Activity activity = getActivity();
+                ServerManager.stopServer();
                 activity.finishAffinity();
                 RomManager.shutdown(activity);
                 return true;
@@ -130,6 +168,7 @@ public class SettingsActivity extends AppCompatActivity {
 
             reboot.setOnPreferenceClickListener(preference -> {
                 Activity activity = getActivity();
+                ServerManager.stopServer();
                 activity.finishAndRemoveTask();
                 RomManager.reboot(activity);
                 return true;
@@ -201,6 +240,109 @@ public class SettingsActivity extends AppCompatActivity {
                 UIHelper.startActivity(getContext(), AboutActivity.class);
                 return true;
             });
+        }
+
+        private void showServerAddressDialog() {
+            Activity activity = getActivity();
+            String currentAddress = AppKV.getStringConfig(activity, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+
+            EditText input = new EditText(activity);
+            input.setText(currentAddress);
+            input.setHint(R.string.server_address_hint);
+
+            new AlertDialog.Builder(activity)
+                    .setTitle(R.string.server_address_dialog_title)
+                    .setView(input)
+                    .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                        String newAddress = input.getText().toString().trim();
+                        if (!newAddress.isEmpty()) {
+                            AppKV.setStringConfig(activity, AppKV.SERVER_ADDRESS, newAddress);
+                            Preference serverAddressPref = findPreference("server_address");
+                            serverAddressPref.setSummary(getString(R.string.settings_server_address_summary) + "\nCurrent: " + newAddress);
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+        }
+
+        private void startLocalServer() {
+            Activity activity = getActivity();
+            String address = AppKV.getStringConfig(activity, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+
+            ProgressDialog dialog = UIHelper.getProgressDialog(activity);
+            dialog.setMessage(getString(R.string.server_connecting));
+            dialog.show();
+
+            new Thread(() -> {
+                try {
+                    // Get screen dimensions
+                    DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
+                    int width = metrics.widthPixels;
+                    int height = metrics.heightPixels;
+
+                    // Start the server
+                    ServerManager.startServer(activity, address, width, height);
+
+                    // Wait for server to be ready (with timeout)
+                    int maxAttempts = 10;
+                    boolean serverReady = false;
+                    for (int i = 0; i < maxAttempts && !serverReady; i++) {
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException("Server startup interrupted");
+                        }
+                        serverReady = ServerManager.testConnection(address);
+                    }
+
+                    if (!serverReady) {
+                        ServerManager.stopServer();
+                        throw new IOException("Server did not start within timeout");
+                    }
+                    activity.runOnUiThread(() -> {
+                        dialog.dismiss();
+                        Toast.makeText(activity, R.string.server_started, Toast.LENGTH_SHORT).show();
+
+                        // Launch the remote renderer activity
+                        Intent intent = new Intent(activity, RemoteRenderActivity.class);
+                        intent.putExtra("server_address", address);
+                        startActivity(intent);
+                    });
+                } catch (Exception e) {
+                    activity.runOnUiThread(() -> {
+                        dialog.dismiss();
+                        Toast.makeText(activity, getString(R.string.server_start_failed, e.getMessage()), Toast.LENGTH_LONG).show();
+                    });
+                }
+            }, "start-local-server").start();
+        }
+
+        private void connectToServer() {
+            Activity activity = getActivity();
+            String address = AppKV.getStringConfig(activity, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+
+            ProgressDialog dialog = UIHelper.getProgressDialog(activity);
+            dialog.setMessage(getString(R.string.server_connecting));
+            dialog.show();
+
+            new Thread(() -> {
+                boolean connected = ServerManager.testConnection(address);
+
+                activity.runOnUiThread(() -> {
+                    dialog.dismiss();
+                    if (connected) {
+                        Toast.makeText(activity, R.string.server_connected, Toast.LENGTH_SHORT).show();
+
+                        // Launch the remote renderer activity
+                        Intent intent = new Intent(activity, RemoteRenderActivity.class);
+                        intent.putExtra("server_address", address);
+                        startActivity(intent);
+                    } else {
+                        Toast.makeText(activity, getString(R.string.server_connection_failed, "Connection refused"), Toast.LENGTH_LONG).show();
+                    }
+                });
+            }, "test-connection").start();
         }
 
 

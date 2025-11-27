@@ -6,6 +6,28 @@
 
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <PreferenceCategory android:title="@string/settings_category_server">
+        <Preference
+            android:key="server_address"
+            android:summary="@string/settings_server_address_summary"
+            android:title="@string/settings_key_server_address" />
+
+        <Preference
+            android:key="start_server"
+            android:summary="@string/settings_start_server_summary"
+            android:title="@string/settings_key_start_server" />
+
+        <Preference
+            android:key="connect_server"
+            android:summary="@string/settings_connect_server_summary"
+            android:title="@string/settings_key_connect_server" />
+
+        <Preference
+            android:key="server_console"
+            android:summary="@string/settings_server_console_summary"
+            android:title="@string/settings_key_server_console" />
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="@string/settings_category_basic">
         <Preference
             android:key="@string/settings_key_import_app"
