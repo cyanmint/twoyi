@@ -143,8 +143,8 @@ fn generate_test_pattern(data: &mut [u8], width: i32, height: i32, frame: u32) {
                 let rel_x = x.saturating_sub(center_x - text_width/2);
                 let rel_y = y.saturating_sub(center_y - text_height/2);
                 let on_x_line = in_text_area && (
-                    (rel_x as i32 - rel_y as i32).unsigned_abs() < 4 ||
-                    (rel_x as i32 + rel_y as i32 - text_height as i32).unsigned_abs() < 4
+                    (rel_x as i32 - rel_y as i32).abs() < 4 ||
+                    (rel_x as i32 + rel_y as i32 - text_height as i32).abs() < 4
                 );
                 
                 // Draw animation indicator at bottom to show server is running
