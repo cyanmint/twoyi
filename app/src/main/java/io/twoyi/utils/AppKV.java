@@ -48,6 +48,9 @@ public class AppKV {
     // Verbose debug logging
     public static final String VERBOSE_DEBUG = "verbose_debug";
 
+    // Fake gralloc - capture graphics from legacy ROMs
+    public static final String FAKE_GRALLOC = "fake_gralloc";
+
     public static boolean getBooleanConfig(Context context,  String key, boolean fallback) {
         return getPref(context).getBoolean(key, fallback);
     }

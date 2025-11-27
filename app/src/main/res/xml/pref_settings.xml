@@ -87,6 +87,12 @@
             android:defaultValue="false"
             android:summary="@string/settings_verbose_debug_summary"
             android:title="@string/settings_verbose_debug_title" />
+
+        <CheckBoxPreference
+            android:key="fake_gralloc"
+            android:defaultValue="false"
+            android:summary="@string/settings_fake_gralloc_summary"
+            android:title="@string/settings_fake_gralloc_title" />
     </PreferenceCategory>
 
 

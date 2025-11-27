@@ -130,6 +130,15 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
 
+            android.preference.CheckBoxPreference fakeGralloc = (android.preference.CheckBoxPreference) findPreference("fake_gralloc");
+            if (fakeGralloc != null) {
+                fakeGralloc.setChecked(AppKV.getBooleanConfig(getActivity(), AppKV.FAKE_GRALLOC, false));
+                fakeGralloc.setOnPreferenceChangeListener((preference, newValue) -> {
+                    AppKV.setBooleanConfig(getActivity(), AppKV.FAKE_GRALLOC, (Boolean) newValue);
+                    return true;
+                });
+            }
+
             // Update server address summary with current value
             String currentAddress = AppKV.getStringConfig(getActivity(), AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
             serverAddress.setSummary(getString(R.string.settings_server_address_summary) + "\nCurrent: " + currentAddress);
