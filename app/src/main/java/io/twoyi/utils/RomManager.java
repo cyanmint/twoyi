@@ -21,6 +21,7 @@ import com.topjohnwu.superuser.Shell;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -50,7 +51,14 @@ public final class RomManager {
 
     private static final String TAG = "RomManager";
 
-    private static final String ROOTFS_NAME = "rootfs.tar.gz";
+    // Supported ROM file names in order of preference
+    private static final String[] ROOTFS_NAMES = {
+        "rootfs.tar.gz",
+        "rootfs.tgz",
+        "rootfs.tar.xz",
+        "rootfs.txz",
+        "rootfs.tar"
+    };
 
     private static final String ROM_INFO_FILE = "rom.ini";
 
@@ -184,10 +192,7 @@ public final class RomManager {
     }
 
     public static RomInfo getRomInfo(File rom) {
-        try (FileInputStream fis = new FileInputStream(rom);
-             BufferedInputStream bis = new BufferedInputStream(fis);
-             GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
-             TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
+        try (TarArchiveInputStream tais = createTarInputStream(rom)) {
 
             TarArchiveEntry entry;
             while ((entry = tais.getNextTarEntry()) != null) {
@@ -286,7 +291,26 @@ public final class RomManager {
         return err == 0;
     }
 
-    public static int extractRootfs(Context context, File rootfsTarGz) {
+    /**
+     * Creates a TarArchiveInputStream based on the file extension.
+     * Supports .tar.gz, .tgz, .tar.xz, .txz, and plain .tar
+     */
+    private static TarArchiveInputStream createTarInputStream(File archiveFile) throws IOException {
+        String name = archiveFile.getName().toLowerCase();
+        FileInputStream fis = new FileInputStream(archiveFile);
+        BufferedInputStream bis = new BufferedInputStream(fis);
+        
+        if (name.endsWith(".tar.gz") || name.endsWith(".tgz")) {
+            return new TarArchiveInputStream(new GzipCompressorInputStream(bis));
+        } else if (name.endsWith(".tar.xz") || name.endsWith(".txz")) {
+            return new TarArchiveInputStream(new XZCompressorInputStream(bis));
+        } else {
+            // Plain .tar or unknown - try as plain tar
+            return new TarArchiveInputStream(bis);
+        }
+    }
+
+    public static int extractRootfs(Context context, File rootfsArchive) {
         File rootfsDir = getRootfsDir(context);
         
         // Ensure rootfs directory exists
@@ -295,10 +319,7 @@ public final class RomManager {
             return -1;
         }
         
-        try (FileInputStream fis = new FileInputStream(rootfsTarGz);
-             BufferedInputStream bis = new BufferedInputStream(fis);
-             GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
-             TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
+        try (TarArchiveInputStream tais = createTarInputStream(rootfsArchive)) {
 
             TarArchiveEntry entry;
             while ((entry = tais.getNextTarEntry()) != null) {
@@ -376,6 +397,29 @@ public final class RomManager {
         }
     }
 
+    /**
+     * Find the ROM file in assets, trying all supported formats.
+     * Returns the filename if found, null otherwise.
+     */
+    private static String findRomInAssets(AssetManager assets) {
+        try {
+            String[] assetList = assets.list("");
+            if (assetList != null) {
+                for (String rootfsName : ROOTFS_NAMES) {
+                    for (String asset : assetList) {
+                        if (rootfsName.equals(asset)) {
+                            Log.i(TAG, "Found ROM file in assets: " + rootfsName);
+                            return rootfsName;
+                        }
+                    }
+                }
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to list assets", e);
+        }
+        return null;
+    }
+
     public static boolean extractRootfsInAssets(Context context) {
 
         // Ensure rootfs directory exists
@@ -385,33 +429,20 @@ public final class RomManager {
             return false;
         }
 
-        // Check if ROM file exists in assets
+        // Find ROM file in assets (try all supported formats)
         AssetManager assets = context.getAssets();
-        boolean romExistsInAssets = false;
-        try {
-            String[] assetList = assets.list("");
-            if (assetList != null) {
-                for (String asset : assetList) {
-                    if (ROOTFS_NAME.equals(asset)) {
-                        romExistsInAssets = true;
-                        break;
-                    }
-                }
-            }
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to list assets", e);
-        }
+        String romFileName = findRomInAssets(assets);
 
-        if (!romExistsInAssets) {
-            Log.w(TAG, "ROM file " + ROOTFS_NAME + " not found in assets, skipping extraction");
+        if (romFileName == null) {
+            Log.w(TAG, "No ROM file found in assets. Tried: " + String.join(", ", ROOTFS_NAMES));
             return false;
         }
 
         // read assets
         long t1 = SystemClock.elapsedRealtime();
-        File rootfsTarGz = context.getFileStreamPath(ROOTFS_NAME);
-        try (InputStream inputStream = new BufferedInputStream(assets.open(ROOTFS_NAME));
-             OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfsTarGz))) {
+        File rootfsArchive = context.getFileStreamPath(romFileName);
+        try (InputStream inputStream = new BufferedInputStream(assets.open(romFileName));
+             OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfsArchive))) {
             byte[] buffer = new byte[10240];
             int count;
             while ((count = inputStream.read(buffer)) > 0) {
@@ -423,11 +454,11 @@ public final class RomManager {
         }
         long t2 = SystemClock.elapsedRealtime();
 
-        int ret = extractRootfs(context, rootfsTarGz);
+        int ret = extractRootfs(context, rootfsArchive);
 
         long t3 = SystemClock.elapsedRealtime();
 
-        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " untar: " + (t3 - t2) + "ret: " + ret);
+        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " untar: " + (t3 - t2) + " ret: " + ret);
 
         return ret == 0;
     }
