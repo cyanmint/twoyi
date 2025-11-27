@@ -105,6 +105,13 @@ public class SettingsActivity extends AppCompatActivity {
         public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
 
+            // Local container settings
+            Preference startLocalLegacy = findPreference("start_local_legacy");
+            startLocalLegacy.setOnPreferenceClickListener(preference -> {
+                startLocalLegacy();
+                return true;
+            });
+
             // Server settings - use literal keys that match the XML
             Preference serverAddress = findPreference("server_address");
             Preference adbPort = findPreference("adb_port");
@@ -363,6 +370,50 @@ public class SettingsActivity extends AppCompatActivity {
                     });
                 }
             }, "start-local-server").start();
+        }
+
+        private void startLocalLegacy() {
+            Activity activity = getActivity();
+            
+            // Check if rootfs exists
+            boolean romExist = RomManager.romExist(activity);
+            
+            if (!romExist) {
+                // Need to extract rootfs first
+                ProgressDialog dialog = UIHelper.getProgressDialog(activity);
+                dialog.setMessage(getString(R.string.extracting_tips));
+                dialog.show();
+                
+                new Thread(() -> {
+                    boolean factoryRomUpdated = RomManager.needsUpgrade(activity);
+                    boolean forceInstall = AppKV.getBooleanConfig(activity, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
+                    boolean use3rdRom = AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
+                    
+                    RomManager.extractRootfs(activity.getApplicationContext(), false, factoryRomUpdated, forceInstall, use3rdRom);
+                    RomManager.initRootfs(activity.getApplicationContext());
+                    
+                    activity.runOnUiThread(() -> {
+                        dialog.dismiss();
+                        
+                        // Check if extraction succeeded
+                        if (RomManager.romExist(activity)) {
+                            // Start Render2Activity
+                            Intent intent = new Intent(activity, Render2Activity.class);
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                            startActivity(intent);
+                            activity.finish();
+                        } else {
+                            Toast.makeText(activity, getString(R.string.server_start_failed, "Failed to extract rootfs"), Toast.LENGTH_LONG).show();
+                        }
+                    });
+                }, "extract-rootfs-legacy").start();
+            } else {
+                // Rootfs already exists, start Render2Activity directly
+                Intent intent = new Intent(activity, Render2Activity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                startActivity(intent);
+                activity.finish();
+            }
         }
 
         private void connectToServer() {

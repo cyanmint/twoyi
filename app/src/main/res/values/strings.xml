@@ -124,6 +124,11 @@
     <string name="adb_port_dialog_title">ADB Port</string>
     <string name="adb_port_hint">Port number (e.g., 5555)</string>
 
+    <!-- Local container settings -->
+    <string name="settings_category_local">Local Container</string>
+    <string name="settings_key_start_local_legacy">Start Local (Legacy Mode)</string>
+    <string name="settings_start_local_legacy_summary">Start the container locally with OpenGL graphics (requires gralloc ROM)</string>
+
     <!-- Debug settings -->
     <string name="settings_category_debug">Debug</string>
     <string name="settings_verbose_debug_title">Verbose Debug Logging</string>

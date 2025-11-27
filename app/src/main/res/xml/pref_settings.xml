@@ -6,6 +6,13 @@
 
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <PreferenceCategory android:title="@string/settings_category_local">
+        <Preference
+            android:key="start_local_legacy"
+            android:summary="@string/settings_start_local_legacy_summary"
+            android:title="@string/settings_key_start_local_legacy" />
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="@string/settings_category_server">
         <Preference
             android:key="server_address"
