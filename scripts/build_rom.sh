@@ -135,21 +135,35 @@ EOF
         mkdir -p "${ROOTFS_OUTPUT}/vendor"
     fi
     
-    # Create default.prop for vendor if it doesn't exist
-    if [ ! -f "${ROOTFS_OUTPUT}/vendor/default.prop" ]; then
-        touch "${ROOTFS_OUTPUT}/vendor/default.prop"
+    # Create default.prop for vendor if it doesn't exist (handle symlinks)
+    local vendor_prop="${ROOTFS_OUTPUT}/vendor/default.prop"
+    if [ ! -e "${vendor_prop}" ] && [ ! -L "${vendor_prop}" ]; then
+        # Only create if vendor is a real directory (not a symlink)
+        if [ -d "${ROOTFS_OUTPUT}/vendor" ] && [ ! -L "${ROOTFS_OUTPUT}/vendor" ]; then
+            touch "${vendor_prop}"
+        fi
     fi
     
     # Set up ADB to listen on network by default
     # This is important for scrcpy connectivity
-    if [ -f "${ROOTFS_OUTPUT}/default.prop" ]; then
-        # Modify default properties to enable network ADB
-        grep -v "^service.adb.tcp.port=" "${ROOTFS_OUTPUT}/default.prop" > "${ROOTFS_OUTPUT}/default.prop.tmp" || true
-        echo "service.adb.tcp.port=5555" >> "${ROOTFS_OUTPUT}/default.prop.tmp"
-        mv "${ROOTFS_OUTPUT}/default.prop.tmp" "${ROOTFS_OUTPUT}/default.prop"
+    local default_prop="${ROOTFS_OUTPUT}/default.prop"
+    # Handle the case where default.prop might be a symlink
+    if [ -L "${default_prop}" ]; then
+        # If it's a symlink, resolve it and work with the real file
+        local real_prop=$(readlink -f "${default_prop}" 2>/dev/null || echo "${default_prop}")
+        if [ -f "${real_prop}" ]; then
+            grep -v "^service.adb.tcp.port=" "${real_prop}" > "${real_prop}.tmp" || true
+            echo "service.adb.tcp.port=5555" >> "${real_prop}.tmp"
+            mv "${real_prop}.tmp" "${real_prop}"
+        fi
+    elif [ -f "${default_prop}" ]; then
+        # Regular file - modify it directly
+        grep -v "^service.adb.tcp.port=" "${default_prop}" > "${default_prop}.tmp" || true
+        echo "service.adb.tcp.port=5555" >> "${default_prop}.tmp"
+        mv "${default_prop}.tmp" "${default_prop}"
     else
         # Create default.prop if it doesn't exist
-        echo "service.adb.tcp.port=5555" > "${ROOTFS_OUTPUT}/default.prop"
+        echo "service.adb.tcp.port=5555" > "${default_prop}"
         log_info "Created default.prop with ADB network port configuration"
     fi
     
