@@ -15,20 +15,25 @@ use std::path::PathBuf;
 
 mod input;
 mod framebuffer;
+mod gralloc;
 
 #[derive(Parser, Debug)]
 #[command(name = "twoyi-server")]
-#[command(about = r#"twoyi container server
+#[command(about = r#"twoyi container server with software graphics support
 
-IMPORTANT: The container requires graphics support (gralloc HAL) to run properly.
-When running standalone without the Android app, the graphics services (gralloc-2-0,
-surfaceflinger) will crash because they need libOpenglRender.so which requires an
-Android surface.
+This server provides a software-based graphics implementation that allows
+the container to run without requiring libOpenglRender.so or an Android surface.
 
-For full functionality, use the twoyi app. The standalone server is intended for:
-- Debugging container startup issues
-- Running headless containers (if graphics services are disabled)
-- Manual environment setup and testing"#, long_about = None)]
+The server includes:
+- Software gralloc HAL for buffer allocation
+- Framebuffer streaming to connected clients
+- Input event forwarding (touch and keyboard)
+
+Usage modes:
+- Normal: Start container and stream framebuffer to clients
+- Setup: Start server without container for manual environment setup
+
+For full functionality, use the twoyi Android app as a client."#, long_about = None)]
 struct Args {
     /// Path to the rootfs directory
     #[arg(short, long)]
@@ -57,6 +62,10 @@ struct Args {
     /// Setup mode - start server without launching container (for manual environment setup)
     #[arg(short, long)]
     setup: bool,
+    
+    /// Disable gralloc server (use legacy framebuffer reading)
+    #[arg(long)]
+    no_gralloc: bool,
 }
 
 fn main() {
@@ -81,12 +90,18 @@ fn main() {
         info!("Loader: {:?}", loader);
     }
     
-    // Print warning about graphics limitations
-    warn!("=== GRAPHICS LIMITATION ===");
-    warn!("The standalone server cannot provide graphics support (gralloc HAL).");
-    warn!("Graphics services (gralloc-2-0, surfaceflinger) will crash without libOpenglRender.so.");
-    warn!("For full graphics support, use the twoyi Android app instead.");
-    warn!("===========================");
+    // Print info about graphics support
+    if args.no_gralloc {
+        warn!("=== GRALLOC DISABLED ===");
+        warn!("Gralloc server is disabled. Using legacy framebuffer reading.");
+        warn!("Graphics services may crash without proper gralloc HAL.");
+        warn!("========================");
+    } else {
+        info!("=== SOFTWARE GRAPHICS ===");
+        info!("Software gralloc server will be started.");
+        info!("Graphics services will use software rendering.");
+        info!("=========================");
+    }
 
     // Validate rootfs exists
     if !args.rootfs.exists() {
@@ -103,6 +118,25 @@ fn main() {
     // Start input system
     let rootfs_str = args.rootfs.to_string_lossy().to_string();
     input::start_input_system(args.width, args.height, &rootfs_str);
+    
+    // Start gralloc server if not disabled
+    let gralloc_server = if !args.no_gralloc {
+        let gralloc_socket = format!("{}/dev/gralloc", rootfs_str);
+        let server = Arc::new(gralloc::GrallocServer::new(
+            &gralloc_socket,
+            args.width as u32,
+            args.height as u32,
+        ));
+        
+        if let Err(e) = server.start() {
+            error!("Failed to start gralloc server: {}", e);
+            std::process::exit(1);
+        }
+        info!("Gralloc server started at {}", gralloc_socket);
+        Some(server)
+    } else {
+        None
+    };
 
     // Start container process (unless in setup mode)
     let container_running = Arc::new(AtomicBool::new(true));
@@ -112,8 +146,9 @@ fn main() {
         let rootfs_clone = args.rootfs.clone();
         let loader_clone = args.loader.clone();
         let verbose = args.verbose;
+        let use_gralloc = !args.no_gralloc;
         thread::spawn(move || {
-            start_container(&rootfs_clone, loader_clone.as_ref(), verbose);
+            start_container(&rootfs_clone, loader_clone.as_ref(), verbose, use_gralloc);
             container_running_clone.store(false, Ordering::SeqCst);
         });
     } else {
@@ -135,12 +170,19 @@ fn main() {
 
     info!("Server listening on {}", args.bind);
 
-    // Start framebuffer streamer
-    let frame_streamer = Arc::new(framebuffer::FrameStreamer::new(
+    // Start framebuffer streamer with gralloc integration
+    let mut frame_streamer = framebuffer::FrameStreamer::new(
         args.width, 
         args.height, 
         &args.rootfs.to_string_lossy()
-    ));
+    );
+    
+    // Connect gralloc server to frame streamer if available
+    if let Some(ref server) = gralloc_server {
+        frame_streamer.set_gralloc_server(server.clone());
+    }
+    
+    let frame_streamer = Arc::new(frame_streamer);
     frame_streamer.start();
 
     let setup_mode = args.setup;
@@ -162,7 +204,7 @@ fn main() {
     }
 }
 
-fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool) {
+fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, use_gralloc: bool) {
     let working_dir = rootfs.to_string_lossy().to_string();
     let log_path = rootfs.parent()
         .map(|p| p.join("log.txt"))
@@ -179,6 +221,14 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool) {
         let loader_str = loader_path.to_string_lossy().to_string();
         info!("Setting TYLOADER={}", loader_str);
         cmd.env("TYLOADER", loader_str);
+    }
+    
+    // Set gralloc socket path if using software gralloc
+    if use_gralloc {
+        let gralloc_socket = format!("{}/dev/gralloc", working_dir);
+        info!("Setting TWOYI_GRALLOC_SOCKET={}", gralloc_socket);
+        cmd.env("TWOYI_GRALLOC_SOCKET", gralloc_socket);
+        cmd.env("TWOYI_USE_SOFTWARE_GRALLOC", "1");
     }
     
     if verbose {

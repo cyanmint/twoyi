@@ -5,13 +5,35 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
-use log::info;
+use log::{info, debug};
+
+use crate::gralloc::GrallocServer;
 
 const FRAME_HEADER: &[u8] = b"FRAME";
 const FRAME_FPS: u64 = 30; // Target FPS for streaming
+
+/// Shared framebuffer data from gralloc
+#[derive(Clone)]
+pub struct FramebufferData {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub dirty: bool,
+}
+
+impl Default for FramebufferData {
+    fn default() -> Self {
+        FramebufferData {
+            data: Vec::new(),
+            width: 0,
+            height: 0,
+            dirty: false,
+        }
+    }
+}
 
 /// Framebuffer streaming manager
 pub struct FrameStreamer {
@@ -20,6 +42,10 @@ pub struct FrameStreamer {
     clients: Arc<Mutex<Vec<TcpStream>>>,
     running: Arc<AtomicBool>,
     framebuffer_path: String,
+    /// Shared framebuffer data from gralloc server
+    gralloc_framebuffer: Arc<RwLock<FramebufferData>>,
+    /// Reference to gralloc server
+    gralloc_server: Option<Arc<GrallocServer>>,
 }
 
 impl FrameStreamer {
@@ -33,7 +59,32 @@ impl FrameStreamer {
             clients: Arc::new(Mutex::new(Vec::new())),
             running: Arc::new(AtomicBool::new(false)),
             framebuffer_path,
+            gralloc_framebuffer: Arc::new(RwLock::new(FramebufferData::default())),
+            gralloc_server: None,
         }
+    }
+    
+    /// Set the gralloc server reference for framebuffer updates
+    pub fn set_gralloc_server(&mut self, server: Arc<GrallocServer>) {
+        let fb_data = self.gralloc_framebuffer.clone();
+        
+        // Set up callback to receive framebuffer updates from gralloc
+        server.set_framebuffer_callback(move |data, width, height| {
+            if let Ok(mut fb) = fb_data.write() {
+                fb.data = data.to_vec();
+                fb.width = width;
+                fb.height = height;
+                fb.dirty = true;
+                debug!("Framebuffer updated: {}x{}, {} bytes", width, height, data.len());
+            }
+        });
+        
+        self.gralloc_server = Some(server);
+    }
+    
+    /// Get shared framebuffer data reference for external use
+    pub fn get_framebuffer_data(&self) -> Arc<RwLock<FramebufferData>> {
+        self.gralloc_framebuffer.clone()
     }
     
     pub fn add_client(&self, stream: TcpStream) {
@@ -53,6 +104,7 @@ impl FrameStreamer {
         let width = self.width;
         let height = self.height;
         let fb_path = self.framebuffer_path.clone();
+        let gralloc_fb = self.gralloc_framebuffer.clone();
         
         thread::spawn(move || {
             info!("Framebuffer streamer started");
@@ -64,16 +116,17 @@ impl FrameStreamer {
             let mut frame_counter: u32 = 0;
             
             while running.load(Ordering::SeqCst) {
-                // Try to read from framebuffer, otherwise generate test pattern
-                let frame = if let Ok(mut fb) = std::fs::File::open(&fb_path) {
-                    let mut data = vec![0u8; frame_size];
-                    if fb.read_exact(&mut data).is_ok() {
-                        data
+                // Priority 1: Try to get framebuffer from gralloc server
+                let frame = if let Ok(fb) = gralloc_fb.read() {
+                    if !fb.data.is_empty() && fb.width > 0 && fb.height > 0 {
+                        debug!("Using gralloc framebuffer: {}x{}", fb.width, fb.height);
+                        fb.data.clone()
                     } else {
-                        generate_test_pattern(&mut frame_data, width, height, frame_counter);
-                        frame_data.clone()
+                        // Priority 2: Try to read from framebuffer device
+                        read_framebuffer_or_test_pattern(&fb_path, &mut frame_data, width, height, frame_counter, frame_size)
                     }
                 } else {
+                    // Fallback: generate test pattern
                     generate_test_pattern(&mut frame_data, width, height, frame_counter);
                     frame_data.clone()
                 };
@@ -100,9 +153,28 @@ impl FrameStreamer {
         });
     }
     
+    #[allow(dead_code)]
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
     }
+}
+
+fn read_framebuffer_or_test_pattern(
+    fb_path: &str, 
+    frame_data: &mut Vec<u8>, 
+    width: i32, 
+    height: i32, 
+    frame_counter: u32,
+    frame_size: usize,
+) -> Vec<u8> {
+    if let Ok(mut fb) = std::fs::File::open(fb_path) {
+        let mut data = vec![0u8; frame_size];
+        if fb.read_exact(&mut data).is_ok() {
+            return data;
+        }
+    }
+    generate_test_pattern(frame_data, width, height, frame_counter);
+    frame_data.clone()
 }
 
 fn generate_test_pattern(data: &mut [u8], width: i32, height: i32, frame: u32) {

@@ -25,3 +25,6 @@ uinput-sys = { git = 'https://github.com/tiann/rust-uinput-sys' }
 opt-level = "s"
 lto = true
 strip = true
+
+# For static linking on Android/Linux targets
+# Use RUSTFLAGS="-C target-feature=+crt-static" when building
