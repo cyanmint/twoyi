@@ -135,6 +135,10 @@ EOF
         grep -v "^service.adb.tcp.port=" "${ROOTFS_OUTPUT}/default.prop" > "${ROOTFS_OUTPUT}/default.prop.tmp" || true
         echo "service.adb.tcp.port=5555" >> "${ROOTFS_OUTPUT}/default.prop.tmp"
         mv "${ROOTFS_OUTPUT}/default.prop.tmp" "${ROOTFS_OUTPUT}/default.prop"
+    else
+        # Create default.prop if it doesn't exist
+        echo "service.adb.tcp.port=5555" > "${ROOTFS_OUTPUT}/default.prop"
+        log_info "Created default.prop with ADB network port configuration"
     fi
     
     # Add ADB port configuration to init.rc if possible

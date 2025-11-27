@@ -6,8 +6,6 @@
 
 package io.twoyi.utils;
 
-import android.content.Context;
-import android.graphics.Bitmap;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
 import android.util.Log;
@@ -18,6 +16,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -111,11 +110,12 @@ public class ScrcpyClient {
         // Since we're connecting to a container that already has scrcpy support,
         // we'll try to connect to the scrcpy socket directly.
         // The container's redroid ROM should have scrcpy-server running.
+        // Note: The scrcpy-server must be started separately before connecting.
         
         // Read device info (scrcpy protocol v1)
         byte[] deviceNameBytes = new byte[DEVICE_NAME_LENGTH];
         inputStream.readFully(deviceNameBytes);
-        String deviceName = new String(deviceNameBytes).trim();
+        String deviceName = new String(deviceNameBytes, StandardCharsets.UTF_8).trim();
 
         videoWidth = inputStream.readInt();
         videoHeight = inputStream.readInt();
