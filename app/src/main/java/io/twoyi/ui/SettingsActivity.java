@@ -132,7 +132,7 @@ public class SettingsActivity extends AppCompatActivity {
 
             android.preference.CheckBoxPreference fakeGralloc = (android.preference.CheckBoxPreference) findPreference("fake_gralloc");
             if (fakeGralloc != null) {
-                fakeGralloc.setChecked(AppKV.getBooleanConfig(getActivity(), AppKV.FAKE_GRALLOC, false));
+                fakeGralloc.setChecked(AppKV.getBooleanConfig(getActivity(), AppKV.FAKE_GRALLOC, true));
                 fakeGralloc.setOnPreferenceChangeListener((preference, newValue) -> {
                     AppKV.setBooleanConfig(getActivity(), AppKV.FAKE_GRALLOC, (Boolean) newValue);
                     return true;

@@ -90,7 +90,7 @@
 
         <CheckBoxPreference
             android:key="fake_gralloc"
-            android:defaultValue="false"
+            android:defaultValue="true"
             android:summary="@string/settings_fake_gralloc_summary"
             android:title="@string/settings_fake_gralloc_title" />
     </PreferenceCategory>

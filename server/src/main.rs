@@ -33,48 +33,55 @@ Use 'scrcpy -s <address>:<adb_port>' to connect and view the display.
 The server also accepts control connections for configuration and monitoring."#, long_about = None)]
 struct Args {
     /// Path to the rootfs directory
-    #[arg(short, long)]
+    #[arg(short = 'r', long)]
     rootfs: PathBuf,
 
     /// Path to the loader library (libloader.so)
-    #[arg(short, long)]
+    #[arg(short = 'l', long)]
     loader: Option<PathBuf>,
 
     /// Address and port to bind for control connections (e.g., 0.0.0.0:8765)
-    #[arg(short = 'a', long, default_value = "0.0.0.0:8765")]
+    #[arg(short = 'b', long, default_value = "0.0.0.0:8765")]
     bind: String,
 
     /// ADB port for scrcpy connections (forwarded to container's adbd)
-    #[arg(long, default_value_t = DEFAULT_ADB_PORT)]
+    #[arg(short = 'p', long, default_value_t = DEFAULT_ADB_PORT)]
     adb_port: u16,
 
     /// Screen width (used by container's display)
-    #[arg(long, default_value_t = 1080)]
+    #[arg(short = 'W', long, default_value_t = 1080)]
     width: i32,
 
     /// Screen height (used by container's display)
-    #[arg(long, default_value_t = 1920)]
+    #[arg(short = 'H', long, default_value_t = 1920)]
     height: i32,
 
     /// Screen DPI (used by container's display)
-    #[arg(long, default_value_t = 320)]
+    #[arg(short = 'd', long, default_value_t = 320)]
     dpi: i32,
 
     /// Verbose mode - show container output in real-time
-    #[arg(short, long)]
+    #[arg(short = 'v', long)]
     verbose: bool,
 
     /// Setup mode - start server without launching container (for manual environment setup)
-    #[arg(short, long)]
+    #[arg(short = 's', long)]
     setup: bool,
 
-    /// Enable fake gralloc device to capture graphics from legacy ROMs
-    #[arg(long)]
+    /// Enable fake gralloc device to capture graphics from legacy ROMs (enabled by default)
+    #[arg(short = 'g', long, default_value_t = true)]
     fake_gralloc: bool,
+
+    /// Disable fake gralloc device (use real framebuffer)
+    #[arg(short = 'G', long)]
+    no_fake_gralloc: bool,
 }
 
 fn main() {
     let args = Args::parse();
+    
+    // Determine if fake gralloc is enabled (default true, disabled by -G/--no-fake-gralloc)
+    let use_fake_gralloc = args.fake_gralloc && !args.no_fake_gralloc;
     
     // Set log level based on verbose flag
     let log_level = if args.verbose { "debug" } else { "info" };
@@ -92,8 +99,10 @@ fn main() {
         info!("Setup mode: enabled (container will NOT be started automatically)");
         info!("You can manually set up the environment and start the container later.");
     }
-    if args.fake_gralloc {
+    if use_fake_gralloc {
         info!("Fake gralloc: enabled (capturing graphics from legacy ROMs)");
+    } else {
+        info!("Fake gralloc: disabled (using real framebuffer)");
     }
     if let Some(ref loader) = args.loader {
         info!("Loader: {:?}", loader);
@@ -123,7 +132,7 @@ fn main() {
     input::start_input_system(args.width, args.height, &rootfs_str);
 
     // Start fake gralloc if enabled
-    let fake_gralloc_instance = if args.fake_gralloc {
+    let fake_gralloc_instance = if use_fake_gralloc {
         let gralloc = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, args.width, args.height));
         gralloc.start();
         info!("Fake gralloc device started - capturing graphics data");
@@ -150,9 +159,9 @@ fn main() {
         let width = args.width;
         let height = args.height;
         let dpi = args.dpi;
-        let use_fake_gralloc = args.fake_gralloc;
+        let use_fake_gralloc_clone = use_fake_gralloc;
         thread::spawn(move || {
-            start_container(&rootfs_clone, loader_clone.as_ref(), verbose, width, height, dpi, use_fake_gralloc);
+            start_container(&rootfs_clone, loader_clone.as_ref(), verbose, width, height, dpi, use_fake_gralloc_clone);
             container_running_clone.store(false, Ordering::SeqCst);
         });
     } else {
@@ -176,7 +185,7 @@ fn main() {
 
     // Start framebuffer streamer (for legacy clients)
     // If fake gralloc is enabled, use the gralloc shared memory path
-    let fb_source = if args.fake_gralloc {
+    let fb_source = if use_fake_gralloc {
         format!("{}/dev/shm/gralloc_fb", args.rootfs.to_string_lossy())
     } else {
         format!("{}/dev/graphics/fb0", args.rootfs.to_string_lossy())
@@ -193,7 +202,7 @@ fn main() {
 
     let setup_mode = args.setup;
     let adb_port_for_clients = args.adb_port;
-    let use_fake_gralloc = args.fake_gralloc;
+    let use_fake_gralloc_for_clients = use_fake_gralloc;
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -202,7 +211,7 @@ fn main() {
                 let rootfs = args.rootfs.clone();
                 let streamer = frame_streamer.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, adb_port_for_clients, use_fake_gralloc);
+                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, adb_port_for_clients, use_fake_gralloc_for_clients);
                 });
             }
             Err(e) => {
