@@ -255,7 +255,11 @@ fn touch_server(width: i32, height: i32, touch_path: &str) {
                     let ret = rx.recv();
                     if let Ok(ev) = ret {
                         let data = unsafe { any_as_u8_slice(&ev) };
-                        let _ = stream.write_all(data);
+                        if stream.write_all(data).is_err() {
+                            break; // Exit on write failure
+                        }
+                    } else {
+                        break; // Exit on channel close/error
                     }
                 });
             }
