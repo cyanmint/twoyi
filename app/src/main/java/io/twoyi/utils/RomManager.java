@@ -289,6 +289,12 @@ public final class RomManager {
     public static int extractRootfs(Context context, File rootfsTarGz) {
         File rootfsDir = getRootfsDir(context);
         
+        // Ensure rootfs directory exists
+        if (!rootfsDir.exists() && !rootfsDir.mkdirs()) {
+            Log.e(TAG, "Failed to create rootfs directory: " + rootfsDir);
+            return -1;
+        }
+        
         try (FileInputStream fis = new FileInputStream(rootfsTarGz);
              BufferedInputStream bis = new BufferedInputStream(fis);
              GzipCompressorInputStream gzis = new GzipCompressorInputStream(bis);
@@ -315,10 +321,29 @@ public final class RomManager {
                     // Handle symbolic links
                     String linkTarget = entry.getLinkName();
                     try {
+                        // Ensure parent directory exists
+                        File parent = outputFile.getParentFile();
+                        if (parent != null && !parent.exists()) {
+                            parent.mkdirs();
+                        }
                         Files.deleteIfExists(outputFile.toPath());
                         Files.createSymbolicLink(outputFile.toPath(), Paths.get(linkTarget));
                     } catch (IOException e) {
                         Log.w(TAG, "Failed to create symlink: " + outputFile + " -> " + linkTarget, e);
+                    }
+                } else if (entry.isLink()) {
+                    // Handle hard links
+                    String linkTarget = entry.getLinkName();
+                    try {
+                        File parent = outputFile.getParentFile();
+                        if (parent != null && !parent.exists()) {
+                            parent.mkdirs();
+                        }
+                        File targetFile = new File(rootfsDir, linkTarget);
+                        Files.deleteIfExists(outputFile.toPath());
+                        Files.createLink(outputFile.toPath(), targetFile.toPath());
+                    } catch (IOException e) {
+                        Log.w(TAG, "Failed to create hardlink: " + outputFile + " -> " + linkTarget, e);
                     }
                 } else {
                     // Regular file
@@ -360,10 +385,32 @@ public final class RomManager {
             return false;
         }
 
+        // Check if ROM file exists in assets
+        AssetManager assets = context.getAssets();
+        boolean romExistsInAssets = false;
+        try {
+            String[] assetList = assets.list("");
+            if (assetList != null) {
+                for (String asset : assetList) {
+                    if (ROOTFS_NAME.equals(asset)) {
+                        romExistsInAssets = true;
+                        break;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to list assets", e);
+        }
+
+        if (!romExistsInAssets) {
+            Log.w(TAG, "ROM file " + ROOTFS_NAME + " not found in assets, skipping extraction");
+            return false;
+        }
+
         // read assets
         long t1 = SystemClock.elapsedRealtime();
         File rootfsTarGz = context.getFileStreamPath(ROOTFS_NAME);
-        try (InputStream inputStream = new BufferedInputStream(context.getAssets().open(ROOTFS_NAME));
+        try (InputStream inputStream = new BufferedInputStream(assets.open(ROOTFS_NAME));
              OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfsTarGz))) {
             byte[] buffer = new byte[10240];
             int count;
@@ -371,7 +418,8 @@ public final class RomManager {
                 os.write(buffer, 0, count);
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Failed to copy ROM from assets", e);
+            return false;
         }
         long t2 = SystemClock.elapsedRealtime();
 
