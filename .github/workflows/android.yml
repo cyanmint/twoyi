@@ -44,11 +44,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Download ROM artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: twoyi-rom-redroid
-        path: app/src/main/assets/
+#    - name: Download ROM artifact
+#      uses: actions/download-artifact@v4
+#      with:
+#        name: twoyi-rom-redroid
+#        path: app/src/main/assets/
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
