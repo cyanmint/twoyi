@@ -113,6 +113,16 @@ public class SettingsActivity extends AppCompatActivity {
             Preference connectScrcpy = findPreference("connect_scrcpy");
             Preference serverConsole = findPreference("server_console");
 
+            // Debug settings
+            android.preference.CheckBoxPreference verboseDebug = (android.preference.CheckBoxPreference) findPreference("verbose_debug");
+            if (verboseDebug != null) {
+                verboseDebug.setChecked(AppKV.getBooleanConfig(getActivity(), AppKV.VERBOSE_DEBUG, false));
+                verboseDebug.setOnPreferenceChangeListener((preference, newValue) -> {
+                    AppKV.setBooleanConfig(getActivity(), AppKV.VERBOSE_DEBUG, (Boolean) newValue);
+                    return true;
+                });
+            }
+
             // Update server address summary with current value
             String currentAddress = AppKV.getStringConfig(getActivity(), AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
             serverAddress.setSummary(getString(R.string.settings_server_address_summary) + "\nCurrent: " + currentAddress);

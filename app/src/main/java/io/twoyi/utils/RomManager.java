@@ -405,6 +405,7 @@ public final class RomManager {
         try {
             String[] assetList = assets.list("");
             if (assetList != null) {
+                Log.d(TAG, "Assets available: " + String.join(", ", assetList));
                 for (String rootfsName : ROOTFS_NAMES) {
                     for (String asset : assetList) {
                         if (rootfsName.equals(asset)) {
@@ -413,6 +414,9 @@ public final class RomManager {
                         }
                     }
                 }
+                Log.w(TAG, "No matching ROM file found. Looking for: " + String.join(", ", ROOTFS_NAMES));
+            } else {
+                Log.w(TAG, "Asset list is null");
             }
         } catch (IOException e) {
             Log.e(TAG, "Failed to list assets", e);
@@ -421,9 +425,12 @@ public final class RomManager {
     }
 
     public static boolean extractRootfsInAssets(Context context) {
-
+        Log.i(TAG, "extractRootfsInAssets called");
+        
         // Ensure rootfs directory exists
         File rootfsDir = getRootfsDir(context);
+        Log.d(TAG, "Rootfs directory: " + rootfsDir.getAbsolutePath());
+        
         if (!rootfsDir.exists() && !rootfsDir.mkdirs()) {
             Log.e(TAG, "Failed to create rootfs directory");
             return false;
@@ -438,27 +445,43 @@ public final class RomManager {
             return false;
         }
 
+        Log.i(TAG, "Extracting ROM from asset: " + romFileName);
+        
         // read assets
         long t1 = SystemClock.elapsedRealtime();
         File rootfsArchive = context.getFileStreamPath(romFileName);
+        Log.d(TAG, "Temporary archive path: " + rootfsArchive.getAbsolutePath());
+        
         try (InputStream inputStream = new BufferedInputStream(assets.open(romFileName));
              OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfsArchive))) {
             byte[] buffer = new byte[10240];
             int count;
+            long totalBytes = 0;
             while ((count = inputStream.read(buffer)) > 0) {
                 os.write(buffer, 0, count);
+                totalBytes += count;
             }
+            Log.d(TAG, "Copied " + totalBytes + " bytes from asset to " + rootfsArchive.getAbsolutePath());
         } catch (IOException e) {
-            Log.e(TAG, "Failed to copy ROM from assets", e);
+            Log.e(TAG, "Failed to copy ROM from assets: " + e.getMessage(), e);
             return false;
         }
         long t2 = SystemClock.elapsedRealtime();
 
+        Log.i(TAG, "Starting rootfs extraction from " + rootfsArchive.getAbsolutePath());
         int ret = extractRootfs(context, rootfsArchive);
 
         long t3 = SystemClock.elapsedRealtime();
 
-        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " untar: " + (t3 - t2) + " ret: " + ret);
+        Log.i(TAG, "extract rootfs complete. Read assets: " + (t2 - t1) + "ms, untar: " + (t3 - t2) + "ms, ret: " + ret);
+        
+        // Verify extraction
+        File initFile = new File(rootfsDir, "init");
+        if (initFile.exists()) {
+            Log.i(TAG, "Extraction verified: init file exists at " + initFile.getAbsolutePath());
+        } else {
+            Log.e(TAG, "Extraction failed: init file NOT found at " + initFile.getAbsolutePath());
+        }
 
         return ret == 0;
     }

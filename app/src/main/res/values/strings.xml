@@ -123,4 +123,9 @@
     <string name="scrcpy_error">Scrcpy error: %1$s</string>
     <string name="adb_port_dialog_title">ADB Port</string>
     <string name="adb_port_hint">Port number (e.g., 5555)</string>
+
+    <!-- Debug settings -->
+    <string name="settings_category_debug">Debug</string>
+    <string name="settings_verbose_debug_title">Verbose Debug Logging</string>
+    <string name="settings_verbose_debug_summary">Enable extra verbose logging for debugging container issues</string>
 </resources>

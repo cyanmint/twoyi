@@ -45,6 +45,9 @@ public class AppKV {
     public static final String DISPLAY_MODE_SCRCPY = "scrcpy";
     public static final String DISPLAY_MODE_LEGACY = "legacy";
 
+    // Verbose debug logging
+    public static final String VERBOSE_DEBUG = "verbose_debug";
+
     public static boolean getBooleanConfig(Context context,  String key, boolean fallback) {
         return getPref(context).getBoolean(key, fallback);
     }

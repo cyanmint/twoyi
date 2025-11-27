@@ -74,6 +74,14 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="@string/settings_category_debug">
+        <CheckBoxPreference
+            android:key="verbose_debug"
+            android:defaultValue="false"
+            android:summary="@string/settings_verbose_debug_summary"
+            android:title="@string/settings_verbose_debug_title" />
+    </PreferenceCategory>
+
 
     <PreferenceCategory android:title="@string/settings_category_other">
 
