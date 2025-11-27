@@ -60,9 +60,9 @@ struct Args {
     #[arg(short = 'd', long, default_value_t = 320)]
     dpi: i32,
 
-    /// Verbose mode - show container output in real-time
-    #[arg(short = 'v', long)]
-    verbose: bool,
+    /// Verbose level: "none" (quiet), "v" (default, info), "vv" (extra verbose, debug)
+    #[arg(short = 'v', long, default_value = "v")]
+    verbose: String,
 
     /// Setup mode - start server without launching container (for manual environment setup)
     #[arg(short = 's', long)]
@@ -83,8 +83,12 @@ fn main() {
     // Determine if fake gralloc is enabled (default true, disabled by -G/--no-fake-gralloc)
     let use_fake_gralloc = args.fake_gralloc && !args.no_fake_gralloc;
     
-    // Set log level based on verbose flag
-    let log_level = if args.verbose { "debug" } else { "info" };
+    // Determine verbosity level
+    let (log_level, verbose_output) = match args.verbose.as_str() {
+        "none" => ("warn", false),
+        "vv" => ("debug", true),
+        _ => ("info", true), // "v" or default
+    };
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(log_level)).init();
 
     info!("twoyi-server starting...");
@@ -92,9 +96,7 @@ fn main() {
     info!("Control address: {}", args.bind);
     info!("ADB port for scrcpy: {}", args.adb_port);
     info!("Screen size: {}x{} @ {}dpi", args.width, args.height, args.dpi);
-    if args.verbose {
-        info!("Verbose mode: enabled");
-    }
+    info!("Verbose level: {}", args.verbose);
     if args.setup {
         info!("Setup mode: enabled (container will NOT be started automatically)");
         info!("You can manually set up the environment and start the container later.");
@@ -155,13 +157,13 @@ fn main() {
         let container_running_clone = container_running.clone();
         let rootfs_clone = args.rootfs.clone();
         let loader_clone = args.loader.clone();
-        let verbose = args.verbose;
+        let verbose_clone = verbose_output;
         let width = args.width;
         let height = args.height;
         let dpi = args.dpi;
         let use_fake_gralloc_clone = use_fake_gralloc;
         thread::spawn(move || {
-            start_container(&rootfs_clone, loader_clone.as_ref(), verbose, width, height, dpi, use_fake_gralloc_clone);
+            start_container(&rootfs_clone, loader_clone.as_ref(), verbose_clone, width, height, dpi, use_fake_gralloc_clone);
             container_running_clone.store(false, Ordering::SeqCst);
         });
     } else {
