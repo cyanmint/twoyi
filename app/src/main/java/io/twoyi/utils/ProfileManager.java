@@ -248,12 +248,22 @@ public class ProfileManager {
 
     /**
      * Get the rootfs directory for a profile.
-     * If the profile has a custom rootfs path, use that.
+     * If the profile has a custom rootfs path that is a valid file path, use that.
      * Otherwise, use a profile-specific subdirectory.
+     * Note: Content URIs (content://) are not supported as rootfs paths.
      */
     public File getRootfsDir(Profile profile) {
-        if (profile.getRootfsPath() != null && !profile.getRootfsPath().isEmpty()) {
-            return new File(profile.getRootfsPath());
+        String rootfsPath = profile.getRootfsPath();
+        if (rootfsPath != null && !rootfsPath.isEmpty()) {
+            // Check if it's a valid file path (not a content URI)
+            if (!rootfsPath.startsWith("content://")) {
+                File customPath = new File(rootfsPath);
+                // Verify the path looks valid
+                if (customPath.isAbsolute()) {
+                    return customPath;
+                }
+            }
+            // Content URIs or invalid paths fall through to default handling
         }
         
         // Use profile-specific subdirectory
@@ -271,7 +281,8 @@ public class ProfileManager {
      */
     private String sanitizeForPath(String input) {
         // Keep only alphanumeric characters and limit length
-        return input.replaceAll("[^a-zA-Z0-9-]", "").substring(0, Math.min(input.length(), 32));
+        String sanitized = input.replaceAll("[^a-zA-Z0-9-]", "");
+        return sanitized.substring(0, Math.min(sanitized.length(), 32));
     }
 
     /**

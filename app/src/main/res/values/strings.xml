@@ -178,4 +178,9 @@
     <string name="profile_last_used">Last used: %1$s</string>
     <string name="invalid_port">Invalid port number (1-65535)</string>
     <string name="active_profile">Active: %1$s</string>
+    <string name="profile_uri_path_warning">Content URI selected. Custom path may not work; default path will be used.</string>
+    <string name="unsaved_changes_title">Unsaved Changes</string>
+    <string name="unsaved_changes_message">You have unsaved changes. What would you like to do?</string>
+    <string name="save_and_exit">Save &amp; Exit</string>
+    <string name="discard_changes">Discard</string>
 </resources>

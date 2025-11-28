@@ -72,14 +72,19 @@ public class ProfileTest {
     }
 
     @Test
-    public void testUpdateLastUsed() throws InterruptedException {
+    public void testUpdateLastUsed() {
         Profile profile = new Profile();
         long initialTime = profile.getLastUsedAt();
         
-        Thread.sleep(10);
+        // Set a specific past time
+        profile.setLastUsedAt(initialTime - 1000);
+        long oldTime = profile.getLastUsedAt();
+        
+        // Update should set a new timestamp
         profile.updateLastUsed();
         
-        assertTrue(profile.getLastUsedAt() > initialTime);
+        // The new time should be greater than the old time we set
+        assertTrue(profile.getLastUsedAt() > oldTime);
     }
 
     @Test

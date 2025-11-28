@@ -7,9 +7,11 @@
 package io.twoyi.ui;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.CheckBox;
@@ -41,6 +43,7 @@ public class ProfileEditActivity extends AppCompatActivity {
 
     private ProfileManager profileManager;
     private Profile profile;
+    private Profile originalProfile; // For tracking changes
 
     private EditText etName;
     private EditText etControlPort;
@@ -77,6 +80,13 @@ public class ProfileEditActivity extends AppCompatActivity {
             Toast.makeText(this, "Profile not found", Toast.LENGTH_SHORT).show();
             finish();
             return;
+        }
+
+        // Store original values for change detection
+        try {
+            originalProfile = Profile.fromJson(profile.toJson());
+        } catch (Exception e) {
+            originalProfile = null;
         }
 
         initViews();
@@ -152,6 +162,22 @@ public class ProfileEditActivity extends AppCompatActivity {
         updateRootfsDisplay();
     }
 
+    /**
+     * Try to convert a content URI to a file path.
+     * Returns null if conversion is not possible.
+     */
+    private String getFilePathFromUri(Uri uri) {
+        // For file:// URIs, return the path directly
+        if ("file".equals(uri.getScheme())) {
+            return uri.getPath();
+        }
+        
+        // For content:// URIs, we can't reliably get a file path
+        // The path will be stored as-is and ProfileManager will handle it appropriately
+        // by using the default path for content URIs
+        return null;
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -163,13 +189,17 @@ public class ProfileEditActivity extends AppCompatActivity {
                 getContentResolver().takePersistableUriPermission(treeUri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                 
-                // Convert to file path if possible
-                DocumentFile docFile = DocumentFile.fromTreeUri(this, treeUri);
-                if (docFile != null) {
-                    // Store the URI as string since we can't always get a file path
+                // Try to get a file path, otherwise store the URI
+                String filePath = getFilePathFromUri(treeUri);
+                if (filePath != null) {
+                    profile.setRootfsPath(filePath);
+                } else {
+                    // Store URI - ProfileManager will use default path for URI-based paths
+                    // since File operations won't work with content:// URIs
                     profile.setRootfsPath(treeUri.toString());
-                    updateRootfsDisplay();
+                    Toast.makeText(this, R.string.profile_uri_path_warning, Toast.LENGTH_LONG).show();
                 }
+                updateRootfsDisplay();
             }
         }
     }
@@ -240,9 +270,48 @@ public class ProfileEditActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Check if any changes were made to the profile
+     */
+    private boolean hasChanges() {
+        if (originalProfile == null) {
+            return true; // Assume changes if we couldn't store original
+        }
+        
+        String name = etName.getText().toString().trim();
+        String controlPort = etControlPort.getText().toString().trim();
+        String adbPort = etAdbPort.getText().toString().trim();
+        String mode = rbLegacy.isChecked() ? Profile.MODE_LEGACY : Profile.MODE_SERVER;
+        boolean verboseDebug = cbVerboseDebug.isChecked();
+        boolean use3rdPartyRom = cb3rdPartyRom.isChecked();
+        
+        return !name.equals(originalProfile.getName()) ||
+               !controlPort.equals(originalProfile.getControlPort()) ||
+               !adbPort.equals(originalProfile.getAdbPort()) ||
+               !mode.equals(originalProfile.getMode()) ||
+               verboseDebug != originalProfile.isVerboseDebug() ||
+               use3rdPartyRom != originalProfile.isUse3rdPartyRom() ||
+               !safeEquals(profile.getRootfsPath(), originalProfile.getRootfsPath());
+    }
+
+    private boolean safeEquals(String s1, String s2) {
+        if (s1 == null && s2 == null) return true;
+        if (s1 == null || s2 == null) return false;
+        return s1.equals(s2);
+    }
+
     @Override
     public void onBackPressed() {
-        // Prompt to save if changes were made
-        saveProfile();
+        if (hasChanges()) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.unsaved_changes_title)
+                    .setMessage(R.string.unsaved_changes_message)
+                    .setPositiveButton(R.string.save_and_exit, (dialog, which) -> saveProfile())
+                    .setNegativeButton(R.string.discard_changes, (dialog, which) -> finish())
+                    .setNeutralButton(android.R.string.cancel, null)
+                    .show();
+        } else {
+            finish();
+        }
     }
 }
