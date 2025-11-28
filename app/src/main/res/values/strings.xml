@@ -123,6 +123,7 @@
     <string name="scrcpy_error">Scrcpy error: %1$s</string>
     <string name="adb_address_dialog_title">ADB Address</string>
     <string name="adb_address_hint">address:port (e.g., 127.0.0.1:5556)</string>
+    <string name="invalid_address_format">Invalid address format. Use host:port (e.g., 127.0.0.1:5556)</string>
 
     <!-- Navigation -->
     <string name="press_back_again_to_exit">Press back again to return to settings</string>

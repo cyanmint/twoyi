@@ -17,7 +17,9 @@ mod input;
 mod framebuffer;
 mod gralloc;
 
-/// Default ADB address for scrcpy connections
+/// Default ADB address for scrcpy connections (binds to all interfaces)
+/// Note: Server binds to 0.0.0.0 to accept connections from any interface,
+/// while app defaults to 127.0.0.1 for localhost connections
 const DEFAULT_ADB_ADDRESS: &str = "0.0.0.0:5556";
 
 #[derive(Parser, Debug)]

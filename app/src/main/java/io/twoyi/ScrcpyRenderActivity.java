@@ -76,7 +76,12 @@ public class ScrcpyRenderActivity extends Activity implements View.OnTouchListen
         // Parse host and port from ADB address
         String[] parts = adbAddress.split(":");
         mServerHost = parts[0];
-        mAdbPort = parts.length > 1 ? Integer.parseInt(parts[1]) : 5556;
+        try {
+            mAdbPort = parts.length > 1 ? Integer.parseInt(parts[1]) : 5556;
+        } catch (NumberFormatException e) {
+            Log.w(TAG, "Invalid port in ADB address, using default: " + adbAddress);
+            mAdbPort = 5556;
+        }
 
         mLoadingText.setText(getString(R.string.scrcpy_connecting, mServerHost, mAdbPort));
 

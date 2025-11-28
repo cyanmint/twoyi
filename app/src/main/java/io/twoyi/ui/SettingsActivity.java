@@ -466,6 +466,11 @@ public class SettingsActivity extends AppCompatActivity {
                     .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                         String newAddress = input.getText().toString().trim();
                         if (!newAddress.isEmpty()) {
+                            // Validate address format (host:port)
+                            if (!isValidAddressFormat(newAddress)) {
+                                Toast.makeText(activity, R.string.invalid_address_format, Toast.LENGTH_SHORT).show();
+                                return;
+                            }
                             AppKV.setStringConfig(activity, AppKV.ADB_ADDRESS, newAddress);
                             Preference adbAddressPref = findPreference("adb_address");
                             adbAddressPref.setSummary(getString(R.string.settings_adb_address_summary) + "\nCurrent: " + newAddress);
@@ -473,6 +478,22 @@ public class SettingsActivity extends AppCompatActivity {
                     })
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
+        }
+
+        private boolean isValidAddressFormat(String address) {
+            if (address == null || address.isEmpty()) {
+                return false;
+            }
+            String[] parts = address.split(":");
+            if (parts.length != 2) {
+                return false;
+            }
+            try {
+                int port = Integer.parseInt(parts[1]);
+                return port > 0 && port < 65536;
+            } catch (NumberFormatException e) {
+                return false;
+            }
         }
 
         private void connectViaScrcpy() {
