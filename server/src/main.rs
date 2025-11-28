@@ -74,9 +74,6 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    // Fake gralloc is always enabled (required for graphics rendering)
-    let use_fake_gralloc = true;
-
     // Determine verbosity level
     let (log_level, verbose_output) = match args.verbose.as_str() {
         "none" => ("warn", false),
@@ -123,15 +120,10 @@ fn main() {
     let rootfs_str = args.rootfs.to_string_lossy().to_string();
     input::start_input_system(args.width, args.height, &rootfs_str);
 
-    // Start fake gralloc if enabled
-    let fake_gralloc_instance = if use_fake_gralloc {
-        let gralloc = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, args.width, args.height));
-        gralloc.start();
-        info!("Fake gralloc device started - capturing graphics data");
-        Some(gralloc)
-    } else {
-        None
-    };
+    // Start fake gralloc (always enabled)
+    let gralloc = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, args.width, args.height));
+    gralloc.start();
+    info!("Fake gralloc device started - capturing graphics data");
 
     // Start ADB forwarder (for scrcpy connections)
     let adb_address = args.adb_address.clone();
@@ -151,9 +143,8 @@ fn main() {
         let width = args.width;
         let height = args.height;
         let dpi = args.dpi;
-        let use_fake_gralloc_clone = use_fake_gralloc;
         thread::spawn(move || {
-            start_container(&rootfs_clone, loader_clone.as_ref(), verbose_clone, width, height, dpi, use_fake_gralloc_clone);
+            start_container(&rootfs_clone, loader_clone.as_ref(), verbose_clone, width, height, dpi);
             container_running_clone.store(false, Ordering::SeqCst);
         });
     } else {
@@ -177,13 +168,8 @@ fn main() {
 
     info!("Control server listening on {}", args.bind);
 
-    // Start framebuffer streamer (for legacy clients)
-    // If fake gralloc is enabled, use the gralloc shared memory path
-    let fb_source = if use_fake_gralloc {
-        format!("{}/dev/shm/gralloc_fb", args.rootfs.to_string_lossy())
-    } else {
-        format!("{}/dev/graphics/fb0", args.rootfs.to_string_lossy())
-    };
+    // Start framebuffer streamer using gralloc shared memory path
+    let fb_source = format!("{}/dev/shm/gralloc_fb", args.rootfs.to_string_lossy());
     let frame_streamer = Arc::new(framebuffer::FrameStreamer::new_with_path(
         args.width,
         args.height,
@@ -191,12 +177,11 @@ fn main() {
     ));
     frame_streamer.start();
 
-    // Keep fake_gralloc_instance alive
-    let _gralloc = fake_gralloc_instance;
+    // Keep gralloc instance alive
+    let _gralloc = gralloc;
 
     let setup_mode = args.setup;
     let adb_address_for_clients = args.adb_address.clone();
-    let use_fake_gralloc_for_clients = use_fake_gralloc;
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -206,7 +191,7 @@ fn main() {
                 let streamer = frame_streamer.clone();
                 let adb_addr = adb_address_for_clients.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, &adb_addr, use_fake_gralloc_for_clients);
+                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, &adb_addr);
                 });
             }
             Err(e) => {
@@ -435,7 +420,7 @@ fn forward_tcp_streams(mut client: TcpStream, mut server: TcpStream) {
     let _ = handle2.join();
 }
 
-fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, width: i32, height: i32, dpi: i32, fake_gralloc: bool) {
+fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, width: i32, height: i32, dpi: i32) {
     let working_dir = rootfs.to_string_lossy().to_string();
     let log_path = rootfs.parent()
         .map(|p| p.join("log.txt"))
@@ -463,15 +448,13 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
     // Enable ADB over network
     cmd.env("REDROID_ADB_ENABLED", "1");
 
-    // Set fake gralloc environment variables if enabled
-    if fake_gralloc {
-        info!("Setting up fake gralloc environment");
-        for (key, value) in gralloc::get_gralloc_env_vars() {
-            cmd.env(key, value);
-        }
-        // Tell the container where the gralloc shared memory is
-        cmd.env("GRALLOC_SHM_PATH", format!("{}/dev/shm/gralloc_fb", working_dir));
+    // Set fake gralloc environment variables (always enabled)
+    info!("Setting up fake gralloc environment");
+    for (key, value) in gralloc::get_gralloc_env_vars() {
+        cmd.env(key, value);
     }
+    // Tell the container where the gralloc shared memory is
+    cmd.env("GRALLOC_SHM_PATH", format!("{}/dev/shm/gralloc_fb", working_dir));
 
     if verbose {
         // In verbose mode, pipe stdout/stderr so we can log them
@@ -552,13 +535,12 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
     }
 }
 
-fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>, adb_address: &str, fake_gralloc: bool) {
+fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>, adb_address: &str) {
     let peer_addr = stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
     info!("Client connected from {}", peer_addr);
 
     // Send initial info to client
     let status = if setup_mode { "setup" } else { "running" };
-    let display_mode = if fake_gralloc { "fake_gralloc" } else { "scrcpy" };
     let info = serde_json::json!({
         "width": width,
         "height": height,
@@ -567,8 +549,8 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
         "setup_mode": setup_mode,
         "streaming": true,
         "adb_address": adb_address,
-        "display_mode": display_mode,
-        "fake_gralloc": fake_gralloc
+        "display_mode": "fake_gralloc",
+        "fake_gralloc": true
     });
 
     if let Ok(info_str) = serde_json::to_string(&info) {
