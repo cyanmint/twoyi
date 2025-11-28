@@ -137,6 +137,44 @@ The following files were created by AI (GitHub Copilot) and are NOT APPLICABLE f
 5. The internal system of threetwi will be fully customizable. Because its system is open source, you can fork the project to compile your own system. You can also customize the system components, such as the HAL layer to implement virtual cameras, virtual sensors and other special features.
 6. **NEW: Profile management** - Create and manage multiple container profiles with different configurations.
 
+## Using ROMs in Custom Paths
+
+The ROM's `init` binary has hardcoded paths that only work at `/data/data/io.twoyi/rootfs`. To use ROMs in custom locations (e.g., when using different profiles or running from Termux), you need to patch the ROM.
+
+### Automatic Patching (via App)
+
+When using the threetwi app with profiles that have custom rootfs paths, the ROM is automatically patched during extraction. The app handles:
+- Patching the `init` binary to use the profile's rootfs path
+- Setting up the loader symlinks
+- Creating required directories
+
+### Manual Patching (via Script)
+
+For manual ROM setup or use outside the app, use the `scripts/prepare_rom.sh` script:
+
+```bash
+# Extract the ROM (example using 7z)
+7z x rootfs.7z
+
+# Patch the ROM for a custom path
+./scripts/prepare_rom.sh /data/data/com.termux/files/home/rootfs
+
+# Or with custom loader paths
+./scripts/prepare_rom.sh \
+    --loader /data/data/com.termux/files/home/loader64 \
+    /data/data/com.termux/files/home/rootfs
+```
+
+**Important Path Length Limits:**
+- Rootfs path: max 26 characters (same as `/data/data/io.twoyi/rootfs`)
+- Loader paths: max 28 characters
+
+If your paths are longer, create symlinks:
+```bash
+ln -s /data/data/com.termux/files/home/rootfs_1 /data/ty1
+./scripts/prepare_rom.sh /data/ty1
+```
+
 ## Building
 
 Threetwi contains two parts:
