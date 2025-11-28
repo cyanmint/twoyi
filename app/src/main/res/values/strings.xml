@@ -137,4 +137,45 @@
     <string name="settings_category_debug">Debug</string>
     <string name="settings_verbose_debug_title">Verbose Debug Logging</string>
     <string name="settings_verbose_debug_summary">Enable extra verbose logging for debugging container issues</string>
+
+    <!-- Profile Management -->
+    <string name="profile_management_title">Profile Management</string>
+    <string name="settings_key_profiles">Manage Profiles</string>
+    <string name="settings_profiles_summary">Create and manage multiple container profiles</string>
+    <string name="add_profile">Add Profile</string>
+    <string name="edit_profile">Edit</string>
+    <string name="delete_profile">Delete</string>
+    <string name="duplicate_profile">Duplicate</string>
+    <string name="save_profile">Save</string>
+    <string name="more_options">More options</string>
+    <string name="create_profile_title">Create New Profile</string>
+    <string name="edit_profile_title">Edit: %1$s</string>
+    <string name="delete_profile_title">Delete Profile</string>
+    <string name="delete_profile_confirm">Are you sure you want to delete the profile \"%1$s\"?</string>
+    <string name="cannot_delete_last_profile">Cannot delete the last profile</string>
+    <string name="profile_duplicated">Profile duplicated</string>
+    <string name="profile_activated">Profile \"%1$s\" activated</string>
+    <string name="profile_saved">Profile saved</string>
+    <string name="profile_name_hint">Enter profile name</string>
+    <string name="profile_name_label">Profile Name</string>
+    <string name="profile_name_empty">Profile name cannot be empty</string>
+    <string name="profile_name_exists">A profile with this name already exists</string>
+    <string name="profile_mode_label">Container Mode</string>
+    <string name="profile_mode_legacy">Legacy (OpenGL Graphics)</string>
+    <string name="profile_mode_server">Server (Scrcpy Display)</string>
+    <string name="profile_server_settings">Server Settings</string>
+    <string name="profile_control_port">Control Port</string>
+    <string name="profile_adb_port">ADB Port</string>
+    <string name="profile_rootfs_path">Rootfs Path</string>
+    <string name="profile_rootfs_default">Default: %1$s</string>
+    <string name="profile_rootfs_initialized">✓ Rootfs initialized</string>
+    <string name="profile_rootfs_not_initialized">⚠ Rootfs not initialized</string>
+    <string name="profile_select_rootfs">Select Path</string>
+    <string name="profile_clear_rootfs">Use Default</string>
+    <string name="profile_options">Options</string>
+    <string name="profile_verbose_debug">Verbose Debug Logging</string>
+    <string name="profile_3rd_party_rom">Use 3rd Party ROM</string>
+    <string name="profile_last_used">Last used: %1$s</string>
+    <string name="invalid_port">Invalid port number (1-65535)</string>
+    <string name="active_profile">Active: %1$s</string>
 </resources>

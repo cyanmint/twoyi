@@ -69,6 +69,10 @@ struct Args {
     /// Setup mode - start server without launching container (for manual environment setup)
     #[arg(short = 's', long)]
     setup: bool,
+
+    /// Profile name for identification (used for managing multiple containers)
+    #[arg(short = 'p', long, default_value = "default")]
+    profile: String,
 }
 
 fn main() {
@@ -83,6 +87,7 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(log_level)).init();
 
     info!("twoyi-server starting...");
+    info!("Profile: {}", args.profile);
     info!("Rootfs: {:?}", args.rootfs);
     info!("Control address: {}", args.bind);
     info!("ADB address for scrcpy: {}", args.adb_address);
@@ -184,6 +189,7 @@ fn main() {
 
     let setup_mode = args.setup;
     let adb_address_for_clients = args.adb_address.clone();
+    let profile_name = args.profile.clone();
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -192,8 +198,9 @@ fn main() {
                 let rootfs = args.rootfs.clone();
                 let streamer = frame_streamer.clone();
                 let adb_addr = adb_address_for_clients.clone();
+                let profile = profile_name.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, &adb_addr);
+                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, &adb_addr, &profile);
                 });
             }
             Err(e) => {
@@ -539,7 +546,7 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
     }
 }
 
-fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>, adb_address: &str) {
+fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>, adb_address: &str, profile_name: &str) {
     let peer_addr = stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
     info!("Client connected from {}", peer_addr);
 
@@ -554,7 +561,8 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
         "streaming": true,
         "adb_address": adb_address,
         "display_mode": "fake_gralloc",
-        "fake_gralloc": true
+        "fake_gralloc": true,
+        "profile": profile_name
     });
 
     if let Ok(info_str) = serde_json::to_string(&info) {

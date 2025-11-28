@@ -46,6 +46,8 @@ import io.twoyi.RemoteRenderActivity;
 import io.twoyi.ScrcpyRenderActivity;
 import io.twoyi.utils.AppKV;
 import io.twoyi.utils.LogEvents;
+import io.twoyi.utils.Profile;
+import io.twoyi.utils.ProfileManager;
 import io.twoyi.utils.RomManager;
 import io.twoyi.utils.ServerManager;
 import io.twoyi.utils.UIHelper;
@@ -90,10 +92,13 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     public static class SettingsFragment extends PreferenceFragment {
+        private ProfileManager profileManager;
+
         @Override
         public void onCreate(@Nullable Bundle savedInstanceState) {
             super.onCreate(savedInstanceState);
             addPreferencesFromResource(R.xml.pref_settings);
+            profileManager = ProfileManager.getInstance(getActivity());
         }
 
         private Preference findPreference(@StringRes int id) {
@@ -104,6 +109,16 @@ public class SettingsActivity extends AppCompatActivity {
         @Override
         public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
+
+            // Profile management
+            Preference manageProfiles = findPreference("manage_profiles");
+            if (manageProfiles != null) {
+                updateProfileSummary(manageProfiles);
+                manageProfiles.setOnPreferenceClickListener(preference -> {
+                    UIHelper.startActivity(getContext(), ProfileListActivity.class);
+                    return true;
+                });
+            }
 
             // Local container settings
             Preference startLocalLegacy = findPreference("start_local_legacy");
@@ -130,12 +145,15 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
 
-            // Update server address summary with current value
-            String currentAddress = AppKV.getStringConfig(getActivity(), AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+            // Update server address summary with current value (from active profile)
+            Profile activeProfile = profileManager.getActiveProfile();
+            String currentAddress = activeProfile != null ? 
+                    activeProfile.getServerAddress() : AppKV.DEFAULT_SERVER_ADDRESS;
             serverAddress.setSummary(getString(R.string.settings_server_address_summary) + "\nCurrent: " + currentAddress);
 
-            // Update ADB address summary with current value
-            String currentAdbAddress = AppKV.getStringConfig(getActivity(), AppKV.ADB_ADDRESS, AppKV.DEFAULT_ADB_ADDRESS);
+            // Update ADB address summary with current value (from active profile)
+            String currentAdbAddress = activeProfile != null ? 
+                    activeProfile.getAdbAddress() : AppKV.DEFAULT_ADB_ADDRESS;
             adbAddress.setSummary(getString(R.string.settings_adb_address_summary) + "\nCurrent: " + currentAdbAddress);
 
             serverAddress.setOnPreferenceClickListener(preference -> {
@@ -276,9 +294,44 @@ public class SettingsActivity extends AppCompatActivity {
             });
         }
 
+        private void updateProfileSummary(Preference pref) {
+            Profile activeProfile = profileManager.getActiveProfile();
+            if (activeProfile != null) {
+                pref.setSummary(getString(R.string.active_profile, activeProfile.getName()));
+            }
+        }
+
+        @Override
+        public void onResume() {
+            super.onResume();
+            // Update profile summary when returning from profile management
+            Preference manageProfiles = findPreference("manage_profiles");
+            if (manageProfiles != null) {
+                updateProfileSummary(manageProfiles);
+            }
+            
+            // Update addresses based on active profile
+            Profile activeProfile = profileManager.getActiveProfile();
+            if (activeProfile != null) {
+                Preference serverAddress = findPreference("server_address");
+                if (serverAddress != null) {
+                    serverAddress.setSummary(getString(R.string.settings_server_address_summary) + 
+                            "\nCurrent: " + activeProfile.getServerAddress());
+                }
+                
+                Preference adbAddress = findPreference("adb_address");
+                if (adbAddress != null) {
+                    adbAddress.setSummary(getString(R.string.settings_adb_address_summary) + 
+                            "\nCurrent: " + activeProfile.getAdbAddress());
+                }
+            }
+        }
+
         private void showServerAddressDialog() {
             Activity activity = getActivity();
-            String currentAddress = AppKV.getStringConfig(activity, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+            Profile activeProfile = profileManager.getActiveProfile();
+            String currentAddress = activeProfile != null ? 
+                    activeProfile.getServerAddress() : AppKV.DEFAULT_SERVER_ADDRESS;
 
             EditText input = new EditText(activity);
             input.setText(currentAddress);
@@ -289,8 +342,13 @@ public class SettingsActivity extends AppCompatActivity {
                     .setView(input)
                     .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                         String newAddress = input.getText().toString().trim();
-                        if (!newAddress.isEmpty()) {
-                            AppKV.setStringConfig(activity, AppKV.SERVER_ADDRESS, newAddress);
+                        if (!newAddress.isEmpty() && activeProfile != null) {
+                            // Extract port from address
+                            String[] parts = newAddress.split(":");
+                            if (parts.length == 2) {
+                                activeProfile.setControlPort(parts[1]);
+                                profileManager.updateProfile(activeProfile);
+                            }
                             Preference serverAddressPref = findPreference("server_address");
                             serverAddressPref.setSummary(getString(R.string.settings_server_address_summary) + "\nCurrent: " + newAddress);
                         }
@@ -301,11 +359,19 @@ public class SettingsActivity extends AppCompatActivity {
 
         private void startLocalServer() {
             Activity activity = getActivity();
-            String address = AppKV.getStringConfig(activity, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+            Profile activeProfile = profileManager.getActiveProfile();
+            String address = activeProfile != null ? 
+                    activeProfile.getServerAddress() : AppKV.DEFAULT_SERVER_ADDRESS;
 
             ProgressDialog dialog = UIHelper.getProgressDialog(activity);
             dialog.setMessage(getString(R.string.server_connecting));
             dialog.show();
+
+            // Mark active profile as used
+            if (activeProfile != null) {
+                activeProfile.updateLastUsed();
+                profileManager.updateProfile(activeProfile);
+            }
 
             new Thread(() -> {
                 try {
@@ -316,7 +382,9 @@ public class SettingsActivity extends AppCompatActivity {
                         
                         boolean factoryRomUpdated = RomManager.needsUpgrade(activity);
                         boolean forceInstall = AppKV.getBooleanConfig(activity, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
-                        boolean use3rdRom = AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
+                        boolean use3rdRom = activeProfile != null ? 
+                                activeProfile.isUse3rdPartyRom() : 
+                                AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
                         
                         RomManager.extractRootfs(activity.getApplicationContext(), romExist, factoryRomUpdated, forceInstall, use3rdRom);
                         RomManager.initRootfs(activity.getApplicationContext());
@@ -374,6 +442,13 @@ public class SettingsActivity extends AppCompatActivity {
 
         private void startLocalLegacy() {
             Activity activity = getActivity();
+            Profile activeProfile = profileManager.getActiveProfile();
+            
+            // Mark active profile as used
+            if (activeProfile != null) {
+                activeProfile.updateLastUsed();
+                profileManager.updateProfile(activeProfile);
+            }
             
             // Check if rootfs exists
             boolean romExist = RomManager.romExist(activity);
@@ -387,7 +462,9 @@ public class SettingsActivity extends AppCompatActivity {
                 new Thread(() -> {
                     boolean factoryRomUpdated = RomManager.needsUpgrade(activity);
                     boolean forceInstall = AppKV.getBooleanConfig(activity, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
-                    boolean use3rdRom = AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
+                    boolean use3rdRom = activeProfile != null ?
+                            activeProfile.isUse3rdPartyRom() :
+                            AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
                     
                     RomManager.extractRootfs(activity.getApplicationContext(), false, factoryRomUpdated, forceInstall, use3rdRom);
                     RomManager.initRootfs(activity.getApplicationContext());
@@ -418,7 +495,9 @@ public class SettingsActivity extends AppCompatActivity {
 
         private void connectToServer() {
             Activity activity = getActivity();
-            String address = AppKV.getStringConfig(activity, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+            Profile activeProfile = profileManager.getActiveProfile();
+            String address = activeProfile != null ?
+                    activeProfile.getServerAddress() : AppKV.DEFAULT_SERVER_ADDRESS;
 
             ProgressDialog dialog = UIHelper.getProgressDialog(activity);
             dialog.setMessage(getString(R.string.server_connecting));
@@ -445,7 +524,9 @@ public class SettingsActivity extends AppCompatActivity {
 
         private void showAdbAddressDialog() {
             Activity activity = getActivity();
-            String currentAddress = AppKV.getStringConfig(activity, AppKV.ADB_ADDRESS, AppKV.DEFAULT_ADB_ADDRESS);
+            Profile activeProfile = profileManager.getActiveProfile();
+            String currentAddress = activeProfile != null ?
+                    activeProfile.getAdbAddress() : AppKV.DEFAULT_ADB_ADDRESS;
 
             EditText input = new EditText(activity);
             input.setText(currentAddress);
@@ -456,13 +537,18 @@ public class SettingsActivity extends AppCompatActivity {
                     .setView(input)
                     .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                         String newAddress = input.getText().toString().trim();
-                        if (!newAddress.isEmpty()) {
+                        if (!newAddress.isEmpty() && activeProfile != null) {
                             // Validate address format (host:port)
                             if (!isValidAddressFormat(newAddress)) {
                                 Toast.makeText(activity, R.string.invalid_address_format, Toast.LENGTH_SHORT).show();
                                 return;
                             }
-                            AppKV.setStringConfig(activity, AppKV.ADB_ADDRESS, newAddress);
+                            // Extract port from address
+                            String[] parts = newAddress.split(":");
+                            if (parts.length == 2) {
+                                activeProfile.setAdbPort(parts[1]);
+                                profileManager.updateProfile(activeProfile);
+                            }
                             Preference adbAddressPref = findPreference("adb_address");
                             adbAddressPref.setSummary(getString(R.string.settings_adb_address_summary) + "\nCurrent: " + newAddress);
                         }
@@ -489,7 +575,9 @@ public class SettingsActivity extends AppCompatActivity {
 
         private void connectViaScrcpy() {
             Activity activity = getActivity();
-            String adbAddress = AppKV.getStringConfig(activity, AppKV.ADB_ADDRESS, AppKV.DEFAULT_ADB_ADDRESS);
+            Profile activeProfile = profileManager.getActiveProfile();
+            String adbAddress = activeProfile != null ?
+                    activeProfile.getAdbAddress() : AppKV.DEFAULT_ADB_ADDRESS;
 
             // Launch the scrcpy renderer activity
             Intent intent = new Intent(activity, ScrcpyRenderActivity.class);

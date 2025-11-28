@@ -49,6 +49,10 @@ public class AppKV {
     // Verbose debug logging
     public static final String VERBOSE_DEBUG = "verbose_debug";
 
+    // Profile management
+    public static final String PROFILES_DATA = "profiles_data";
+    public static final String ACTIVE_PROFILE_ID = "active_profile_id";
+
     public static boolean getBooleanConfig(Context context,  String key, boolean fallback) {
         return getPref(context).getBoolean(key, fallback);
     }

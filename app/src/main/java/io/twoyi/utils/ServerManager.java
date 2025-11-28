@@ -131,6 +131,15 @@ public class ServerManager {
      * Start the local server with the given rootfs path and bind address
      */
     public static void startServer(Context context, String bindAddress, int width, int height) throws IOException {
+        // Get active profile
+        Profile activeProfile = ProfileManager.getInstance(context).getActiveProfile();
+        startServer(context, bindAddress, width, height, activeProfile);
+    }
+
+    /**
+     * Start the local server with a specific profile configuration
+     */
+    public static void startServer(Context context, String bindAddress, int width, int height, Profile profile) throws IOException {
         // Stop any existing server
         stopServer();
         
@@ -140,8 +149,11 @@ public class ServerManager {
         // Extract server binary
         File serverBinary = extractServerBinary(context);
         
-        // Get rootfs path
-        File rootfsDir = RomManager.getRootfsDir(context);
+        // Get rootfs path from profile or default
+        ProfileManager profileManager = ProfileManager.getInstance(context);
+        File rootfsDir = profile != null ? 
+                profileManager.getRootfsDir(profile) : 
+                RomManager.getRootfsDir(context);
         if (!rootfsDir.exists()) {
             throw new IOException("Rootfs directory does not exist: " + rootfsDir);
         }
@@ -152,8 +164,13 @@ public class ServerManager {
         // Ensure boot files exist
         RomManager.ensureBootFiles(context);
 
-        // Check if verbose debug is enabled
-        boolean verboseDebug = AppKV.getBooleanConfig(context, AppKV.VERBOSE_DEBUG, false);
+        // Check if verbose debug is enabled (from profile or global setting)
+        boolean verboseDebug = profile != null ? 
+                profile.isVerboseDebug() : 
+                AppKV.getBooleanConfig(context, AppKV.VERBOSE_DEBUG, false);
+
+        // Get profile name
+        String profileName = profile != null ? profile.getName() : "default";
 
         // Build command with optional verbose mode and loader
         List<String> command = new ArrayList<>();
@@ -168,6 +185,8 @@ public class ServerManager {
         command.add(String.valueOf(height));
         command.add("--loader");
         command.add(loaderPath);
+        command.add("--profile");
+        command.add(profileName);
         
         if (verboseDebug) {
             command.add("--verbose");
