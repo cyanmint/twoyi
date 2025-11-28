@@ -74,7 +74,13 @@ pub fn renderer_init(
     );
 
     // Get the rootfs path from the Java string
-    let rootfs_path: String = env.get_string(rootfs.into()).unwrap().into();
+    let rootfs_path: String = match env.get_string(rootfs.into()) {
+        Ok(s) => s.into(),
+        Err(e) => {
+            error!("Failed to get rootfs string: {:?}", e);
+            return;
+        }
+    };
     info!("rootfs path: {}", rootfs_path);
     
     // Store rootfs path globally for input system
