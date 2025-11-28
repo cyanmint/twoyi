@@ -36,13 +36,13 @@ macro_rules! jni_method {
 }
 
 static RENDERER_STARTED: AtomicBool = AtomicBool::new(false);
-
 #[no_mangle]
 pub fn renderer_init(
     env: JNIEnv,
     _clz: jclass,
     surface: jobject,
     loader: jstring,
+    rootfs: jstring,
     xdpi: jfloat,
     ydpi: jfloat,
     fps: jint,
@@ -68,6 +68,16 @@ pub fn renderer_init(
         width, height, fps
     );
 
+    // Get the rootfs path from the Java string
+    let rootfs_path: String = match env.get_string(rootfs.into()) {
+        Ok(s) => s.into(),
+        Err(e) => {
+            error!("Failed to get rootfs string: {:?}", e);
+            return;
+        }
+    };
+    info!("rootfs path: {}", rootfs_path);
+    
     if RENDERER_STARTED.compare_exchange(false, true, 
         Ordering::Acquire, Ordering::Relaxed).is_err() {
         let win = window.ptr().as_ptr() as *mut c_void;
@@ -76,7 +86,7 @@ pub fn renderer_init(
             renderer_bindings::resetSubWindow(win, 0, 0, width, height, width, height, 1.0, 0.0);
         }
     } else {
-        input::start_input_system(width, height);
+        input::start_input_system(width, height, &rootfs_path);
 
         thread::spawn(move || {
             let win = window.ptr().as_ptr() as *mut c_void;
@@ -94,12 +104,14 @@ pub fn renderer_init(
         });
 
         let loader_path: String = env.get_string(loader.into()).unwrap().into();
-        let working_dir = "/data/data/io.twoyi/rootfs";
-        let log_path = "/data/data/io.twoyi/log.txt";
-        let outputs = File::create(log_path).unwrap();
+        let working_dir = rootfs_path.clone();
+        // Log file should be in parent directory of rootfs
+        let log_path = format!("{}/log.txt", std::path::Path::new(&rootfs_path).parent().unwrap_or(std::path::Path::new("/data/data/io.twoyi")).display());
+        info!("starting container in {}, log to {}", working_dir, log_path);
+        let outputs = File::create(&log_path).unwrap();
         let errors = outputs.try_clone().unwrap();
         let _ = Command::new("./init")
-            .current_dir(working_dir)
+            .current_dir(&working_dir)
             .env("TYLOADER", loader_path)
             .stdout(Stdio::from(outputs))
             .stderr(Stdio::from(errors))
@@ -195,7 +207,7 @@ unsafe fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
 
     let class_name: &str = "io/twoyi/Renderer";
     let jni_methods = [
-        jni_method!(init, renderer_init, "(Landroid/view/Surface;Ljava/lang/String;FFI)V"),
+        jni_method!(init, renderer_init, "(Landroid/view/Surface;Ljava/lang/String;Ljava/lang/String;FFI)V"),
         jni_method!(
             resetWindow,
             renderer_reset_window,

@@ -22,15 +22,15 @@ android {
         minSdk 27
         //noinspection ExpiredTargetSdkVersion
         targetSdk 27
-        versionCode 10354
-        versionName "0.5.4-${buildSerial}"
+        versionCode 10357
+        versionName "3.5.7-${buildSerial}"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters "arm64-v8a"
         }
-        archivesBaseName = "twoyi_${versionName}"
+        archivesBaseName = "threetwi_${versionName}"
     }
 
     buildFeatures {
@@ -76,6 +76,9 @@ dependencies {
 
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.cardview:cardview:1.0.0'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
 
     implementation 'com.github.tiann:FreeReflection:3.1.0'
 
@@ -108,7 +111,7 @@ dependencies {
     implementation "com.microsoft.appcenter:appcenter-analytics:${appCenterSdkVersion}"
     implementation "com.microsoft.appcenter:appcenter-crashes:${appCenterSdkVersion}"
 
-//    testImplementation 'junit:junit:4.+'
+    testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }

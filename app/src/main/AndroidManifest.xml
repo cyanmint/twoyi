@@ -73,6 +73,18 @@
             android:screenOrientation="portrait"
             android:exported="false" />
 
+        <activity
+            android:name=".ui.ProfileListActivity"
+            android:label="@string/profile_management_title"
+            android:screenOrientation="portrait"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.ProfileEditActivity"
+            android:label="@string/edit_profile"
+            android:screenOrientation="portrait"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="io.twoyi.fileprovider"

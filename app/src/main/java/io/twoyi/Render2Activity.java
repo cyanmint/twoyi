@@ -39,12 +39,15 @@ import androidx.annotation.NonNull;
 
 import com.cleveroad.androidmanimation.LoadingAnimationView;
 
+import java.io.File;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.twoyi.utils.AppKV;
 import io.twoyi.utils.LogEvents;
 import io.twoyi.utils.NavUtils;
+import io.twoyi.utils.Profile;
+import io.twoyi.utils.ProfileManager;
 import io.twoyi.utils.RomManager;
 
 /**
@@ -56,6 +59,8 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
     private static final String TAG = "Render2Activity";
 
     private SurfaceView mSurfaceView;
+    private String mRootfsPath;
+    private File mRootfsDir;
 
     private ViewGroup mRootView;
     private LoadingAnimationView mLoadingView;
@@ -77,9 +82,9 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             float xdpi = displayMetrics.xdpi;
             float ydpi = displayMetrics.ydpi;
 
-            Renderer.init(surface, RomManager.getLoaderPath(getApplicationContext()), xdpi, ydpi, (int) getBestFps());
+            Renderer.init(surface, RomManager.getLoaderPath(getApplicationContext()), mRootfsPath, xdpi, ydpi, (int) getBestFps());
 
-            Log.i(TAG, "surfaceCreated");
+            Log.i(TAG, "surfaceCreated with rootfs: " + mRootfsPath);
         }
 
         @Override
@@ -115,6 +120,21 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
 
         super.onCreate(savedInstanceState);
 
+        // Get rootfs path from active profile
+        ProfileManager profileManager = ProfileManager.getInstance(this);
+        Profile activeProfile = profileManager.getActiveProfile();
+        File rootfsDir;
+        if (activeProfile != null) {
+            rootfsDir = profileManager.getRootfsDir(activeProfile);
+            mRootfsPath = rootfsDir.getAbsolutePath();
+        } else {
+            // Fallback to default rootfs path
+            rootfsDir = RomManager.getRootfsDir(this);
+            mRootfsPath = rootfsDir.getAbsolutePath();
+        }
+        mRootfsDir = rootfsDir;
+        Log.i(TAG, "Using rootfs path: " + mRootfsPath);
+
         setContentView(R.layout.ac_render);
         mRootView = findViewById(R.id.root);
 
@@ -146,24 +166,28 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
     }
 
     private void bootSystem() {
-        boolean romExist = RomManager.romExist(this);
-        boolean factoryRomUpdated = RomManager.needsUpgrade(this);
+        // Use profile-specific rootfs directory for all checks and operations
+        boolean romExist = RomManager.romExist(mRootfsDir);
+        boolean factoryRomUpdated = RomManager.needsUpgrade(this, mRootfsDir);
         boolean forceInstall = AppKV.getBooleanConfig(getApplicationContext(), AppKV.FORCE_ROM_BE_RE_INSTALL, false);
         boolean use3rdRom = AppKV.getBooleanConfig(getApplicationContext(), AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
 
         boolean shouldExtractRom = !romExist || forceInstall || (!use3rdRom && factoryRomUpdated);
 
         if (shouldExtractRom) {
-            Log.i(TAG, "extracting rom...");
+            Log.i(TAG, "extracting rom to " + mRootfsDir.getAbsolutePath() + "...");
 
             showTipsForFirstBoot();
 
             new Thread(() -> {
                 mIsExtracting.set(true);
-                RomManager.extractRootfs(getApplicationContext(), romExist, factoryRomUpdated, forceInstall, use3rdRom);
+                RomManager.extractRootfs(getApplicationContext(), mRootfsDir, romExist, factoryRomUpdated, forceInstall, use3rdRom);
                 mIsExtracting.set(false);
 
-                RomManager.initRootfs(getApplicationContext());
+                RomManager.initRootfs(getApplicationContext(), mRootfsDir);
+
+                // Ensure boot files exist for profile-specific rootfs
+                RomManager.ensureBootFiles(getApplicationContext(), mRootfsDir);
 
                 runOnUiThread(() -> {
                     mRootView.addView(mSurfaceView, 0);
@@ -171,6 +195,8 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
                 });
             }, "extract-rom").start();
         } else {
+            // Ensure boot files exist for profile-specific rootfs
+            RomManager.ensureBootFiles(getApplicationContext(), mRootfsDir);
             mRootView.addView(mSurfaceView, 0);
             showBootingProcedure();
         }
