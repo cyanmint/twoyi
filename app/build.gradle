@@ -22,15 +22,15 @@ android {
         minSdk 27
         //noinspection ExpiredTargetSdkVersion
         targetSdk 27
-        versionCode 10354
-        versionName "0.5.4-${buildSerial}"
+        versionCode 10355
+        versionName "3.5.5-${buildSerial}"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters "arm64-v8a"
         }
-        archivesBaseName = "twoyi_${versionName}"
+        archivesBaseName = "threetwi_${versionName}"
     }
 
     buildFeatures {
