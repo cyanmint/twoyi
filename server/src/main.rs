@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use clap::Parser;
-use log::{info, error, debug};
-use std::fs::File;
+use log::{info, error, debug, warn};
+use std::fs::{self, File};
 use std::io::{Write, Read, BufReader, BufRead};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Command, Stdio};
@@ -168,6 +168,8 @@ fn main() {
         });
     } else {
         info!("Container startup skipped (setup mode).");
+        // Set up the rootfs environment (create directories for sockets)
+        setup_rootfs_environment(&args.rootfs);
         info!("To start the container manually, run: cd {:?} && ./init", args.rootfs);
         if let Some(ref loader) = args.loader {
             info!("Don't forget to set: export TYLOADER={:?}", loader);
@@ -221,6 +223,63 @@ fn main() {
             }
         }
     }
+}
+
+/// Set up the rootfs environment for running the container
+/// This matches what the Android app does in RomManager.ensureBootFiles()
+/// It creates necessary directories that the container and server need
+fn setup_rootfs_environment(rootfs: &PathBuf) {
+    info!("Setting up rootfs environment in {:?}", rootfs);
+    
+    // Create necessary directories (matching RomManager.ensureBootFiles)
+    // These are directories where sockets and device files will be created at runtime
+    let directories = [
+        // Input device directory
+        "dev/input",
+        // Android socket directory
+        "dev/socket",
+        // Maps directory
+        "dev/maps",
+        // Binder directories (for sockets that tar ignored)
+        "dev/vbinder",
+        "dev/vndbinder",
+        "dev/hwbinder",
+        // Graphics directory
+        "dev/graphics",
+        // Shared memory directory
+        "dev/shm",
+        // Data system directory
+        "data/system",
+    ];
+    
+    let mut created_count = 0;
+    let mut existed_count = 0;
+    
+    for dir in &directories {
+        let full_path = rootfs.join(dir);
+        if full_path.exists() {
+            debug!("Directory already exists: {}", dir);
+            existed_count += 1;
+        } else {
+            match fs::create_dir_all(&full_path) {
+                Ok(()) => {
+                    debug!("Created directory: {}", dir);
+                    created_count += 1;
+                }
+                Err(e) => {
+                    warn!("Failed to create directory {:?}: {}", full_path, e);
+                }
+            }
+        }
+    }
+    
+    info!("Directory setup complete: {} created, {} already existed", 
+          created_count, existed_count);
+    
+    // Note: Input sockets (dev/input/touch, dev/input/key0) are created by 
+    // start_input_system() when the server starts. Android system sockets
+    // (property_service, vold, zygote, etc.) are created by the container's
+    // init process when it starts. We just need to ensure the directories exist.
 }
 
 /// Start the ADB port forwarder for scrcpy connections
