@@ -130,7 +130,7 @@ public class ProfileManager {
      */
     public List<Profile> getProfilesSortedByLastUsed() {
         List<Profile> sorted = new ArrayList<>(profiles);
-        Collections.sort(sorted, (p1, p2) -> Long.compare(p2.getLastUsedAt(), p1.getLastUsedAt()));
+        Collections.sort(sorted, Comparator.comparingLong(Profile::getLastUsedAt).reversed());
         return sorted;
     }
 
