@@ -11,7 +11,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -153,23 +152,24 @@ public class RomPatcher {
             Log.i(TAG, "Created backup: " + backupFile.getAbsolutePath());
         }
 
-        // Read the init binary
+        // Read the init binary once
         byte[] content = readFile(initFile);
+        byte[] originalContent = content.clone();
         Log.i(TAG, "Read init binary: " + content.length + " bytes");
 
         // Perform replacements
         boolean modified = false;
 
-        content = replaceBytes(content, ORIG_ROOTFS, rootfsPath, MAX_ROOTFS_LEN);
-        if (content != null) {
+        byte[] tempContent = replaceBytes(content, ORIG_ROOTFS, rootfsPath, MAX_ROOTFS_LEN);
+        if (tempContent != null) {
+            content = tempContent;
             modified = true;
             Log.i(TAG, "Patched rootfs path: " + rootfsPath);
         } else {
-            content = readFile(initFile);
             Log.w(TAG, "Rootfs path not found or already patched");
         }
 
-        byte[] tempContent = replaceBytes(content, ORIG_LOADER64, loader64Path, MAX_LOADER64_LEN);
+        tempContent = replaceBytes(content, ORIG_LOADER64, loader64Path, MAX_LOADER64_LEN);
         if (tempContent != null) {
             content = tempContent;
             modified = true;
@@ -206,6 +206,7 @@ public class RomPatcher {
      * @param rootfsPath The new rootfs path
      * @return true if patching succeeded
      * @throws IOException if file operations fail
+     * @throws IllegalArgumentException if loader paths cannot be derived
      */
     public static boolean patchInitBinary(File initFile, String rootfsPath) throws IOException {
         // Derive loader paths from rootfs path
@@ -219,9 +220,9 @@ public class RomPatcher {
             loader64Path = new File(parentDir, "loader64").getAbsolutePath();
             loader32Path = new File(parentDir, "loader32").getAbsolutePath();
         } else {
-            // Fallback - shouldn't happen in practice
-            loader64Path = rootfsPath.replace("/rootfs", "/loader64");
-            loader32Path = rootfsPath.replace("/rootfs", "/loader32");
+            // This should not happen for valid absolute paths
+            throw new IllegalArgumentException(
+                "Cannot derive loader paths: rootfs path has no parent directory: " + rootfsPath);
         }
 
         return patchInitBinary(initFile, rootfsPath, loader64Path, loader32Path);
@@ -251,9 +252,15 @@ public class RomPatcher {
     private static byte[] readFile(File file) throws IOException {
         try (FileInputStream fis = new FileInputStream(file)) {
             byte[] content = new byte[(int) file.length()];
-            int bytesRead = fis.read(content);
-            if (bytesRead != content.length) {
-                throw new IOException("Could not read entire file");
+            int offset = 0;
+            int remaining = content.length;
+            while (remaining > 0) {
+                int bytesRead = fis.read(content, offset, remaining);
+                if (bytesRead == -1) {
+                    throw new IOException("Unexpected end of file: read " + offset + " of " + content.length + " bytes");
+                }
+                offset += bytesRead;
+                remaining -= bytesRead;
             }
             return content;
         }

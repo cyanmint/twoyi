@@ -130,10 +130,21 @@ patch_binary() {
     new_hex=$(printf '%s' "$padded_new" | xxd -p | tr -d '\n')
     
     # Use xxd and sed to do binary replacement
+    # Note: This is safe because we're replacing exact path strings that are null-terminated
+    # and we preserve the same length with null padding
     xxd -p "$file" | tr -d '\n' | sed "s/$old_hex/$new_hex/g" | xxd -r -p > "${file}.patched"
     
     if [ -f "${file}.patched" ]; then
-        chmod --reference="$file" "${file}.patched"
+        # Copy permissions from original file (portable approach)
+        if command -v stat &> /dev/null; then
+            # Try GNU stat first, then BSD stat
+            local perms
+            perms=$(stat -c "%a" "$file" 2>/dev/null || stat -f "%Lp" "$file" 2>/dev/null || echo "755")
+            chmod "$perms" "${file}.patched"
+        else
+            # Fallback: just make executable
+            chmod 755 "${file}.patched"
+        fi
         mv "${file}.patched" "$file"
         return 0
     else
