@@ -38,9 +38,6 @@ macro_rules! jni_method {
 }
 
 static RENDERER_STARTED: AtomicBool = AtomicBool::new(false);
-// Global rootfs path for use by input system
-static ROOTFS_PATH: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
-
 #[no_mangle]
 pub fn renderer_init(
     env: JNIEnv,
