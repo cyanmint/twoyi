@@ -11,11 +11,9 @@ use ndk_sys;
 use std::ffi::c_void;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 use std::thread;
 
 use android_logger::Config;
-use once_cell::sync::Lazy;
 
 use std::fs::File;
 use std::process::{Command, Stdio};
@@ -80,9 +78,6 @@ pub fn renderer_init(
     };
     info!("rootfs path: {}", rootfs_path);
     
-    // Store rootfs path globally for input system
-    *ROOTFS_PATH.lock().expect("ROOTFS_PATH mutex poisoned in renderer_init") = rootfs_path.clone();
-
     if RENDERER_STARTED.compare_exchange(false, true, 
         Ordering::Acquire, Ordering::Relaxed).is_err() {
         let win = window.ptr().as_ptr() as *mut c_void;
