@@ -79,10 +79,10 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    
+
     // Determine if fake gralloc is enabled (default true, disabled by -G/--no-fake-gralloc)
     let use_fake_gralloc = args.fake_gralloc && !args.no_fake_gralloc;
-    
+
     // Determine verbosity level
     let (log_level, verbose_output) = match args.verbose.as_str() {
         "none" => ("warn", false),
@@ -109,7 +109,7 @@ fn main() {
     if let Some(ref loader) = args.loader {
         info!("Loader: {:?}", loader);
     }
-    
+
     // Print scrcpy connection info
     info!("=== SCRCPY DISPLAY ===");
     info!("This server uses scrcpy for display via the container's ADB.");
@@ -152,7 +152,7 @@ fn main() {
 
     // Start container process (unless in setup mode)
     let container_running = Arc::new(AtomicBool::new(true));
-    
+
     if !args.setup {
         let container_running_clone = container_running.clone();
         let rootfs_clone = args.rootfs.clone();
@@ -195,8 +195,8 @@ fn main() {
         format!("{}/dev/graphics/fb0", args.rootfs.to_string_lossy())
     };
     let frame_streamer = Arc::new(framebuffer::FrameStreamer::new_with_path(
-        args.width, 
-        args.height, 
+        args.width,
+        args.height,
         &fb_source
     ));
     frame_streamer.start();
@@ -230,7 +230,7 @@ fn main() {
 /// It creates necessary directories that the container and server need
 fn setup_rootfs_environment(rootfs: &PathBuf) {
     info!("Setting up rootfs environment in {:?}", rootfs);
-    
+
     // Create necessary directories (matching RomManager.ensureBootFiles)
     // These are directories where sockets and device files will be created at runtime
     let directories = [
@@ -251,10 +251,10 @@ fn setup_rootfs_environment(rootfs: &PathBuf) {
         // Data system directory
         "data/system",
     ];
-    
+
     let mut created_count = 0;
     let mut existed_count = 0;
-    
+
     for dir in &directories {
         let full_path = rootfs.join(dir);
         if full_path.exists() {
@@ -272,11 +272,11 @@ fn setup_rootfs_environment(rootfs: &PathBuf) {
             }
         }
     }
-    
-    info!("Directory setup complete: {} created, {} already existed", 
+
+    info!("Directory setup complete: {} created, {} already existed",
           created_count, existed_count);
-    
-    // Note: Input sockets (dev/input/touch, dev/input/key0) are created by 
+
+    // Note: Input sockets (dev/input/touch, dev/input/key0) are created by
     // start_input_system() when the server starts. Android system sockets
     // (property_service, vold, zygote, etc.) are created by the container's
     // init process when it starts. We just need to ensure the directories exist.
@@ -286,7 +286,7 @@ fn setup_rootfs_environment(rootfs: &PathBuf) {
 /// This listens on the specified port and forwards connections to the container's adbd
 fn start_adb_forwarder(port: u16, rootfs: &PathBuf) {
     let bind_addr = format!("0.0.0.0:{}", port);
-    
+
     let listener = match TcpListener::bind(&bind_addr) {
         Ok(l) => l,
         Err(e) => {
@@ -295,13 +295,13 @@ fn start_adb_forwarder(port: u16, rootfs: &PathBuf) {
             return;
         }
     };
-    
+
     info!("ADB forwarder listening on {}", bind_addr);
-    
+
     // The container's adbd listens on a Unix socket at /dev/socket/adbd
     // We need to forward TCP connections to this socket
     let adbd_socket_path = rootfs.join("dev/socket/adbd");
-    
+
     for stream in listener.incoming() {
         match stream {
             Ok(client_stream) => {
@@ -321,7 +321,7 @@ fn start_adb_forwarder(port: u16, rootfs: &PathBuf) {
 fn forward_adb_connection(mut client: TcpStream, adbd_socket_path: &PathBuf) {
     let peer_addr = client.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
     debug!("ADB connection from {}", peer_addr);
-    
+
     // Try to connect to the container's adbd Unix socket
     let mut adbd_socket = match unix_socket::UnixStream::connect(adbd_socket_path) {
         Ok(s) => s,
@@ -342,7 +342,7 @@ fn forward_adb_connection(mut client: TcpStream, adbd_socket_path: &PathBuf) {
             }
         }
     };
-    
+
     // Forward data bidirectionally between client and adbd
     let mut client_clone = match client.try_clone() {
         Ok(c) => c,
@@ -351,7 +351,7 @@ fn forward_adb_connection(mut client: TcpStream, adbd_socket_path: &PathBuf) {
             return;
         }
     };
-    
+
     let mut adbd_clone = match adbd_socket.try_clone() {
         Ok(a) => a,
         Err(e) => {
@@ -359,7 +359,7 @@ fn forward_adb_connection(mut client: TcpStream, adbd_socket_path: &PathBuf) {
             return;
         }
     };
-    
+
     // Client -> adbd
     let handle1 = thread::spawn(move || {
         let mut buf = [0u8; 8192];
@@ -375,7 +375,7 @@ fn forward_adb_connection(mut client: TcpStream, adbd_socket_path: &PathBuf) {
             }
         }
     });
-    
+
     // adbd -> Client
     let handle2 = thread::spawn(move || {
         let mut buf = [0u8; 8192];
@@ -391,10 +391,10 @@ fn forward_adb_connection(mut client: TcpStream, adbd_socket_path: &PathBuf) {
             }
         }
     });
-    
+
     let _ = handle1.join();
     let _ = handle2.join();
-    
+
     debug!("ADB connection from {} closed", peer_addr);
 }
 
@@ -404,12 +404,12 @@ fn forward_tcp_streams(mut client: TcpStream, mut server: TcpStream) {
         Ok(c) => c,
         Err(_) => return,
     };
-    
+
     let mut server_clone = match server.try_clone() {
         Ok(s) => s,
         Err(_) => return,
     };
-    
+
     // Client -> Server
     let handle1 = thread::spawn(move || {
         let mut buf = [0u8; 8192];
@@ -425,7 +425,7 @@ fn forward_tcp_streams(mut client: TcpStream, mut server: TcpStream) {
             }
         }
     });
-    
+
     // Server -> Client
     let handle2 = thread::spawn(move || {
         let mut buf = [0u8; 8192];
@@ -441,7 +441,7 @@ fn forward_tcp_streams(mut client: TcpStream, mut server: TcpStream) {
             }
         }
     });
-    
+
     let _ = handle1.join();
     let _ = handle2.join();
 }
@@ -451,26 +451,26 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
     let log_path = rootfs.parent()
         .map(|p| p.join("log.txt"))
         .unwrap_or_else(|| PathBuf::from("/tmp/twoyi_log.txt"));
-    
+
     info!("Starting container in {}", working_dir);
     info!("Container log file: {:?}", log_path);
-    
+
     let mut cmd = Command::new("./init");
     cmd.current_dir(&working_dir);
-    
+
     // Set TYLOADER environment variable if loader path is provided
     if let Some(loader_path) = loader {
         let loader_str = loader_path.to_string_lossy().to_string();
         info!("Setting TYLOADER={}", loader_str);
         cmd.env("TYLOADER", loader_str);
     }
-    
+
     // Set display configuration for redroid-based ROM
     // These are passed as kernel boot parameters style environment variables
     cmd.env("REDROID_WIDTH", width.to_string());
     cmd.env("REDROID_HEIGHT", height.to_string());
     cmd.env("REDROID_DPI", dpi.to_string());
-    
+
     // Enable ADB over network
     cmd.env("REDROID_ADB_ENABLED", "1");
 
@@ -483,7 +483,7 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
         // Tell the container where the gralloc shared memory is
         cmd.env("GRALLOC_SHM_PATH", format!("{}/dev/shm/gralloc_fb", working_dir));
     }
-    
+
     if verbose {
         // In verbose mode, pipe stdout/stderr so we can log them
         cmd.stdout(Stdio::piped());
@@ -507,18 +507,18 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
         cmd.stdout(Stdio::from(outputs));
         cmd.stderr(Stdio::from(errors));
     }
-    
+
     let result = cmd.spawn();
-    
+
     match result {
         Ok(mut child) => {
             info!("Container process started with PID: {:?}", child.id());
-            
+
             if verbose {
                 // In verbose mode, read and log stdout/stderr in real-time
                 let stdout = child.stdout.take();
                 let stderr = child.stderr.take();
-                
+
                 // Spawn thread to read stdout
                 if let Some(stdout) = stdout {
                     thread::spawn(move || {
@@ -534,7 +534,7 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
                         }
                     });
                 }
-                
+
                 // Spawn thread to read stderr
                 if let Some(stderr) = stderr {
                     thread::spawn(move || {
@@ -551,7 +551,7 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
                     });
                 }
             }
-            
+
             match child.wait() {
                 Ok(status) => info!("Container exited with status: {}", status),
                 Err(e) => error!("Error waiting for container: {}", e),
@@ -581,7 +581,7 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
         "display_mode": display_mode,
         "fake_gralloc": fake_gralloc
     });
-    
+
     if let Ok(info_str) = serde_json::to_string(&info) {
         let _ = stream.write_all(format!("{}\n", info_str).as_bytes());
     }
@@ -600,7 +600,7 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
         }
     };
     let mut line = String::new();
-    
+
     loop {
         line.clear();
         match reader.read_line(&mut line) {
@@ -630,7 +630,7 @@ fn handle_input_event(event: &serde_json::Value) {
                 let x = event.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
                 let y = event.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
                 let pressure = event.get("pressure").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-                
+
                 input::handle_touch_event(action, pointer_id, x, y, pressure);
             }
             "key" => {
