@@ -253,7 +253,13 @@ fn generate_touch_device(width: i32, height: i32, touch_path: &str) -> device_in
 fn touch_server(width: i32, height: i32, touch_path: &str) {
     let device = generate_touch_device(width, height, touch_path);
     let _ = std::fs::remove_file(touch_path);
-    let listener = unix_socket::UnixListener::bind(touch_path).unwrap();
+    let listener = match unix_socket::UnixListener::bind(touch_path) {
+        Ok(l) => l,
+        Err(e) => {
+            info!("Failed to bind UnixListener to '{}': {}", touch_path, e);
+            return;
+        }
+    };
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
