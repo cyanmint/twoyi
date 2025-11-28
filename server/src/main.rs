@@ -70,8 +70,8 @@ struct Args {
     #[arg(short = 's', long)]
     setup: bool,
 
-    /// Enable fake gralloc device to capture graphics from legacy ROMs (enabled by default)
-    #[arg(short = 'g', long, default_value_t = true)]
+    /// Enable fake gralloc device to capture graphics from legacy ROMs (disabled by default)
+    #[arg(short = 'g', long, default_value_t = false)]
     fake_gralloc: bool,
 
     /// Disable fake gralloc device (use real framebuffer)
@@ -82,7 +82,7 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    // Determine if fake gralloc is enabled (default true, disabled by -G/--no-fake-gralloc)
+    // Determine if fake gralloc is enabled (default false, enabled by -g/--fake-gralloc)
     let use_fake_gralloc = args.fake_gralloc && !args.no_fake_gralloc;
 
     // Determine verbosity level
