@@ -198,11 +198,19 @@ public class ProfileEditActivity extends AppCompatActivity {
             .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                 String customPath = input.getText().toString().trim();
                 if (!customPath.isEmpty()) {
-                    // Validate path is within app's data directory
-                    if (customPath.startsWith(basePath) || customPath.startsWith("/data/user/0/io.twoyi/") || customPath.startsWith("/data/data/io.twoyi/")) {
-                        profile.setRootfsPath(customPath);
-                        updateRootfsDisplay();
-                    } else {
+                    // Validate path is within app's data directory using canonical paths
+                    try {
+                        File baseDirFile = new File(basePath);
+                        File customPathFile = new File(customPath);
+                        String baseCanonical = baseDirFile.getCanonicalPath();
+                        String customCanonical = customPathFile.getCanonicalPath();
+                        if (customCanonical.startsWith(baseCanonical)) {
+                            profile.setRootfsPath(customPath);
+                            updateRootfsDisplay();
+                        } else {
+                            Toast.makeText(this, R.string.profile_rootfs_invalid_path, Toast.LENGTH_LONG).show();
+                        }
+                    } catch (java.io.IOException e) {
                         Toast.makeText(this, R.string.profile_rootfs_invalid_path, Toast.LENGTH_LONG).show();
                     }
                 }
