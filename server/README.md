@@ -10,6 +10,13 @@ The threetwi-server is a Rust-based container server that runs the Android conta
 
 ## Changes from Original Twoyi (since commit d3ce306)
 
+### Version 3.5.6
+
+#### Profile-Specific Rootfs Initialization
+- Server now uses profile-specific rootfs directories
+- Each profile can have its own isolated container environment
+- Automatic rootfs initialization for new profiles
+
 ### Version 3.5.5
 
 #### New Server Component
@@ -50,7 +57,7 @@ cd server
 
 ## Files
 
-All files in this directory were created by AI (GitHub Copilot):
+All files in this directory were created by AI (GitHub Copilot) and are NOT APPLICABLE for copyright:
 
 - `src/main.rs` - Main server binary with control connections
 - `src/framebuffer.rs` - Framebuffer capture and streaming

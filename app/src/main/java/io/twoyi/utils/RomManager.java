@@ -72,7 +72,15 @@ public final class RomManager {
     }
 
     public static void initRootfs(Context context) {
-        File propFile = getVendorPropFile(context);
+        File rootfsDir = getRootfsDir(context);
+        initRootfs(context, rootfsDir);
+    }
+
+    /**
+     * Initialize rootfs with a specific directory (for profile support)
+     */
+    public static void initRootfs(Context context, File rootfsDir) {
+        File propFile = getVendorPropFile(rootfsDir);
         String language = Locale.getDefault().getLanguage();
         String country = Locale.getDefault().getCountry();
 
@@ -95,9 +103,16 @@ public final class RomManager {
     }
 
     public static void ensureBootFiles(Context context) {
+        File rootfsDir = getRootfsDir(context);
+        ensureBootFiles(context, rootfsDir);
+    }
 
+    /**
+     * Ensure boot files exist in a specific rootfs directory (for profile support)
+     */
+    public static void ensureBootFiles(Context context, File rootfsDir) {
         // <rootdir>/dev/
-        File devDir = new File(getRootfsDir(context), "dev");
+        File devDir = new File(rootfsDir, "dev");
         ensureDir(new File(devDir, "input"));
         ensureDir(new File(devDir, "socket"));
         ensureDir(new File(devDir, "maps"));
@@ -165,6 +180,14 @@ public final class RomManager {
         return initFile.exists();
     }
 
+    /**
+     * Check if ROM exists in a specific rootfs directory
+     */
+    public static boolean romExist(File rootfsDir) {
+        File initFile = new File(rootfsDir, "init");
+        return initFile.exists();
+    }
+
     public static boolean needsUpgrade(Context context) {
         RomInfo currentRomInfo = getCurrentRomInfo(context);
         Log.i(TAG, "current rom: " + currentRomInfo);
@@ -177,8 +200,35 @@ public final class RomManager {
         return romInfoFromAssets.code > currentRomInfo.code;
     }
 
+    /**
+     * Check if ROM needs upgrade in a specific rootfs directory
+     */
+    public static boolean needsUpgrade(Context context, File rootfsDir) {
+        RomInfo currentRomInfo = getCurrentRomInfo(rootfsDir);
+        Log.i(TAG, "current rom in " + rootfsDir + ": " + currentRomInfo);
+        if (currentRomInfo.equals(DEFAULT_ROM_INFO)) {
+            return true;
+        }
+
+        RomInfo romInfoFromAssets = getRomInfoFromAssets(context);
+        Log.i(TAG, "asset rom: " + romInfoFromAssets);
+        return romInfoFromAssets.code > currentRomInfo.code;
+    }
+
     public static RomInfo getCurrentRomInfo(Context context) {
         File infoFile = new File(getRootfsDir(context), ROM_INFO_FILE);
+        try (FileInputStream inputStream = new FileInputStream(infoFile)) {
+            return getRomInfo(inputStream);
+        } catch (Throwable e) {
+            return DEFAULT_ROM_INFO;
+        }
+    }
+
+    /**
+     * Get ROM info from a specific rootfs directory
+     */
+    public static RomInfo getCurrentRomInfo(File rootfsDir) {
+        File infoFile = new File(rootfsDir, ROM_INFO_FILE);
         try (FileInputStream inputStream = new FileInputStream(infoFile)) {
             return getRomInfo(inputStream);
         } catch (Throwable e) {
@@ -266,6 +316,52 @@ public final class RomManager {
         }
     }
 
+    /**
+     * Extract rootfs to a specific directory (for profile support)
+     */
+    public static void extractRootfs(Context context, File rootfsDir, boolean romExist, boolean needsUpgrade, boolean forceInstall, boolean use3rdRom) {
+
+        // force remove system dir to avoiding wired issues
+        removeSystemPartition(rootfsDir);
+        removeVendorPartition(rootfsDir);
+
+        if (!romExist) {
+            // first init
+            extractRootfsInAssets(context, rootfsDir);
+            return;
+        }
+
+        if (forceInstall) {
+            if (use3rdRom) {
+                // install 3rd rom
+                boolean success = extract3rdRootfs(context, rootfsDir);
+                if (!success) {
+                    showRootfsInstallationFailure(context);
+                    return;
+                }
+            } else {
+                // factory reset!!
+                if (!extractRootfsInAssets(context, rootfsDir)) {
+                    showRootfsInstallationFailure(context);
+                    return;
+                }
+            }
+
+            // force install finish, reset the state.
+            AppKV.setBooleanConfig(context, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
+        } else {
+            if (use3rdRom) {
+                Log.w(TAG, "WTF? 3rd ROM must be force install!");
+            }
+            if (needsUpgrade) {
+                Log.i(TAG, "upgrade factory rom..");
+                if (!extractRootfsInAssets(context, rootfsDir)) {
+                    showRootfsInstallationFailure(context);
+                }
+            }
+        }
+    }
+
     private static void showRootfsInstallationFailure(Context context) {
         // TODO
     }
@@ -292,6 +388,18 @@ public final class RomManager {
     }
 
     /**
+     * Extract 3rd party rootfs to a specific directory
+     */
+    public static boolean extract3rdRootfs(Context context, File rootfsDir) {
+        File rootfs3rd = get3rdRootfsFile(context);
+        if (!rootfs3rd.exists()) {
+            return false;
+        }
+        int err = extractRootfs(rootfsDir, rootfs3rd);
+        return err == 0;
+    }
+
+    /**
      * Creates a TarArchiveInputStream based on the file extension.
      * Supports .tar.gz, .tgz, .tar.xz, .txz, and plain .tar
      */
@@ -312,6 +420,13 @@ public final class RomManager {
 
     public static int extractRootfs(Context context, File rootfsArchive) {
         File rootfsDir = getRootfsDir(context);
+        return extractRootfs(rootfsDir, rootfsArchive);
+    }
+
+    /**
+     * Extract rootfs archive to a specific directory
+     */
+    public static int extractRootfs(File rootfsDir, File rootfsArchive) {
         
         // Ensure rootfs directory exists
         if (!rootfsDir.exists() && !rootfsDir.mkdirs()) {
@@ -425,10 +540,17 @@ public final class RomManager {
     }
 
     public static boolean extractRootfsInAssets(Context context) {
-        Log.i(TAG, "extractRootfsInAssets called");
+        File rootfsDir = getRootfsDir(context);
+        return extractRootfsInAssets(context, rootfsDir);
+    }
+
+    /**
+     * Extract rootfs from assets to a specific directory (for profile support)
+     */
+    public static boolean extractRootfsInAssets(Context context, File rootfsDir) {
+        Log.i(TAG, "extractRootfsInAssets called for directory: " + rootfsDir.getAbsolutePath());
         
         // Ensure rootfs directory exists
-        File rootfsDir = getRootfsDir(context);
         Log.d(TAG, "Rootfs directory: " + rootfsDir.getAbsolutePath());
         
         if (!rootfsDir.exists() && !rootfsDir.mkdirs()) {
@@ -469,7 +591,7 @@ public final class RomManager {
         long t2 = SystemClock.elapsedRealtime();
 
         Log.i(TAG, "Starting rootfs extraction from " + rootfsArchive.getAbsolutePath());
-        int ret = extractRootfs(context, rootfsArchive);
+        int ret = extractRootfs(rootfsDir, rootfsArchive);
 
         long t3 = SystemClock.elapsedRealtime();
 
@@ -494,12 +616,33 @@ public final class RomManager {
         return new File(getRootfsDir(context), "sdcard");
     }
 
+    /**
+     * Get ROM sdcard directory for a specific rootfs directory
+     */
+    public static File getRomSdcardDir(File rootfsDir) {
+        return new File(rootfsDir, "sdcard");
+    }
+
     public static File getVendorDir(Context context) {
         return new File(getRootfsDir(context), "vendor");
     }
 
+    /**
+     * Get vendor directory for a specific rootfs directory
+     */
+    public static File getVendorDir(File rootfsDir) {
+        return new File(rootfsDir, "vendor");
+    }
+
     public static File getVendorPropFile(Context context) {
         return new File(getVendorDir(context), "default.prop");
+    }
+
+    /**
+     * Get vendor prop file for a specific rootfs directory
+     */
+    public static File getVendorPropFile(File rootfsDir) {
+        return new File(getVendorDir(rootfsDir), "default.prop");
     }
 
     public static File get3rdRootfsFile(Context context) {
@@ -512,8 +655,14 @@ public final class RomManager {
 
     private static void removePartition(Context context, String partition) {
         File rootfsDir = getRootfsDir(context);
-        File systemDir = new File(rootfsDir, partition);
+        removePartition(rootfsDir, partition);
+    }
 
+    /**
+     * Remove partition from a specific rootfs directory
+     */
+    private static void removePartition(File rootfsDir, String partition) {
+        File systemDir = new File(rootfsDir, partition);
         IOUtils.deleteDirectory(systemDir);
     }
 
@@ -521,8 +670,22 @@ public final class RomManager {
         removePartition(context, "system");
     }
 
+    /**
+     * Remove system partition from a specific rootfs directory
+     */
+    private static void removeSystemPartition(File rootfsDir) {
+        removePartition(rootfsDir, "system");
+    }
+
     private static void removeVendorPartition(Context context) {
         removePartition(context, "vendor");
+    }
+
+    /**
+     * Remove vendor partition from a specific rootfs directory
+     */
+    private static void removeVendorPartition(File rootfsDir) {
+        removePartition(rootfsDir, "vendor");
     }
 
     private static RomInfo getRomInfo(InputStream in) {

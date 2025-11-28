@@ -42,6 +42,14 @@ Threetwi (based on Twoyi) is a lightweight Android container. It runs a nearly c
 
 ## Changes from Original Twoyi (since commit d3ce306)
 
+### Version 3.5.6
+
+#### Profile-Specific Rootfs Initialization
+- **Fixed rootfs initialization for new profiles**: New profiles now automatically initialize their rootfs directories on first start
+- **All RomManager methods support profile-specific directories**: Added overloaded methods for `romExist()`, `needsUpgrade()`, `extractRootfs()`, `extractRootfsInAssets()`, `initRootfs()`, `ensureBootFiles()`, `getVendorDir()`, `getVendorPropFile()`, `getRomSdcardDir()`
+- **Render2Activity uses profile-specific paths**: Legacy mode now extracts and initializes rootfs in the active profile's directory
+- **SettingsActivity uses profile-specific paths**: Both server mode and legacy mode use the active profile's rootfs directory
+
 ### Version 3.5.5
 
 #### Server Component (NEW)
@@ -60,7 +68,13 @@ Threetwi (based on Twoyi) is a lightweight Android container. It runs a nearly c
   - **Verbose debug**: Per-profile debug logging
   - **3rd party ROM**: Per-profile ROM configuration
 
-#### New Files (AI-Generated)
+#### Native Library Updates
+- `Renderer.init()` now accepts a rootfs path parameter
+- Input system uses dynamic paths based on profile's rootfs directory
+- Removed hardcoded `/data/data/io.twoyi/rootfs` paths
+
+## Files NOT APPLICABLE for Copyright (AI-Generated since d3ce306)
+
 The following files were created by AI (GitHub Copilot) and are NOT APPLICABLE for copyright:
 
 **Server:**
@@ -85,7 +99,12 @@ The following files were created by AI (GitHub Copilot) and are NOT APPLICABLE f
 - `app/src/main/java/io/twoyi/utils/ScrcpyClient.java` - Scrcpy client
 
 **App - Resources:**
-- Layout and menu XML files for profile management
+- `app/src/main/res/layout/activity_profile_list.xml`
+- `app/src/main/res/layout/activity_profile_edit.xml`
+- `app/src/main/res/layout/item_profile.xml`
+- `app/src/main/res/menu/menu_profile_list.xml`
+- `app/src/main/res/menu/menu_profile_edit.xml`
+- `app/src/main/res/menu/menu_profile_item.xml`
 
 **Scripts:**
 - `scripts/build_rom.sh` - ROM building script
@@ -93,11 +112,6 @@ The following files were created by AI (GitHub Copilot) and are NOT APPLICABLE f
 
 **Tests:**
 - `app/src/test/java/io/twoyi/utils/ProfileTest.java` - Unit tests
-
-#### Native Library Updates
-- `Renderer.init()` now accepts a rootfs path parameter
-- Input system uses dynamic paths based on profile's rootfs directory
-- Removed hardcoded `/data/data/io.twoyi/rootfs` paths
 
 ## Capability
 

@@ -373,29 +373,37 @@ public class SettingsActivity extends AppCompatActivity {
                 profileManager.updateProfile(activeProfile);
             }
 
+            // Get profile-specific rootfs directory
+            final File rootfsDir = activeProfile != null ? 
+                    profileManager.getRootfsDir(activeProfile) : 
+                    RomManager.getRootfsDir(activity);
+
             new Thread(() -> {
                 try {
-                    // Check if rootfs exists, extract if needed
-                    boolean romExist = RomManager.romExist(activity);
+                    // Check if rootfs exists, extract if needed (use profile-specific directory)
+                    boolean romExist = RomManager.romExist(rootfsDir);
                     if (!romExist) {
                         activity.runOnUiThread(() -> dialog.setMessage(getString(R.string.extracting_tips)));
                         
-                        boolean factoryRomUpdated = RomManager.needsUpgrade(activity);
+                        boolean factoryRomUpdated = RomManager.needsUpgrade(activity, rootfsDir);
                         boolean forceInstall = AppKV.getBooleanConfig(activity, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
                         boolean use3rdRom = activeProfile != null ? 
                                 activeProfile.isUse3rdPartyRom() : 
                                 AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
                         
-                        RomManager.extractRootfs(activity.getApplicationContext(), romExist, factoryRomUpdated, forceInstall, use3rdRom);
-                        RomManager.initRootfs(activity.getApplicationContext());
+                        RomManager.extractRootfs(activity.getApplicationContext(), rootfsDir, romExist, factoryRomUpdated, forceInstall, use3rdRom);
+                        RomManager.initRootfs(activity.getApplicationContext(), rootfsDir);
                         
                         // Check if extraction succeeded
-                        if (!RomManager.romExist(activity)) {
+                        if (!RomManager.romExist(rootfsDir)) {
                             throw new IOException("Failed to extract rootfs - ROM file may be missing from assets");
                         }
                         
                         activity.runOnUiThread(() -> dialog.setMessage(getString(R.string.server_connecting)));
                     }
+
+                    // Ensure boot files exist for profile-specific rootfs
+                    RomManager.ensureBootFiles(activity.getApplicationContext(), rootfsDir);
 
                     // Get screen dimensions
                     DisplayMetrics metrics = activity.getResources().getDisplayMetrics();
@@ -450,8 +458,13 @@ public class SettingsActivity extends AppCompatActivity {
                 profileManager.updateProfile(activeProfile);
             }
             
-            // Check if rootfs exists
-            boolean romExist = RomManager.romExist(activity);
+            // Get profile-specific rootfs directory
+            final File rootfsDir = activeProfile != null ? 
+                    profileManager.getRootfsDir(activeProfile) : 
+                    RomManager.getRootfsDir(activity);
+            
+            // Check if rootfs exists (use profile-specific directory)
+            boolean romExist = RomManager.romExist(rootfsDir);
             
             if (!romExist) {
                 // Need to extract rootfs first
@@ -460,20 +473,20 @@ public class SettingsActivity extends AppCompatActivity {
                 dialog.show();
                 
                 new Thread(() -> {
-                    boolean factoryRomUpdated = RomManager.needsUpgrade(activity);
+                    boolean factoryRomUpdated = RomManager.needsUpgrade(activity, rootfsDir);
                     boolean forceInstall = AppKV.getBooleanConfig(activity, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
                     boolean use3rdRom = activeProfile != null ?
                             activeProfile.isUse3rdPartyRom() :
                             AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
                     
-                    RomManager.extractRootfs(activity.getApplicationContext(), false, factoryRomUpdated, forceInstall, use3rdRom);
-                    RomManager.initRootfs(activity.getApplicationContext());
+                    RomManager.extractRootfs(activity.getApplicationContext(), rootfsDir, false, factoryRomUpdated, forceInstall, use3rdRom);
+                    RomManager.initRootfs(activity.getApplicationContext(), rootfsDir);
                     
                     activity.runOnUiThread(() -> {
                         dialog.dismiss();
                         
                         // Check if extraction succeeded
-                        if (RomManager.romExist(activity)) {
+                        if (RomManager.romExist(rootfsDir)) {
                             // Start Render2Activity
                             Intent intent = new Intent(activity, Render2Activity.class);
                             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
