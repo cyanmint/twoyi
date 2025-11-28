@@ -69,21 +69,13 @@ struct Args {
     /// Setup mode - start server without launching container (for manual environment setup)
     #[arg(short = 's', long)]
     setup: bool,
-
-    /// Enable fake gralloc device to capture graphics from legacy ROMs (disabled by default)
-    #[arg(short = 'g', long, default_value_t = false)]
-    fake_gralloc: bool,
-
-    /// Disable fake gralloc device (use real framebuffer)
-    #[arg(short = 'G', long)]
-    no_fake_gralloc: bool,
 }
 
 fn main() {
     let args = Args::parse();
 
-    // Determine if fake gralloc is enabled (default false, enabled by -g/--fake-gralloc)
-    let use_fake_gralloc = args.fake_gralloc && !args.no_fake_gralloc;
+    // Fake gralloc is always enabled (required for graphics rendering)
+    let use_fake_gralloc = true;
 
     // Determine verbosity level
     let (log_level, verbose_output) = match args.verbose.as_str() {
@@ -103,11 +95,7 @@ fn main() {
         info!("Setup mode: enabled (container will NOT be started automatically)");
         info!("You can manually set up the environment and start the container later.");
     }
-    if use_fake_gralloc {
-        info!("Fake gralloc: enabled (capturing graphics from legacy ROMs)");
-    } else {
-        info!("Fake gralloc: disabled (using real framebuffer)");
-    }
+    info!("Fake gralloc: enabled (capturing graphics from legacy ROMs)");
     if let Some(ref loader) = args.loader {
         info!("Loader: {:?}", loader);
     }
