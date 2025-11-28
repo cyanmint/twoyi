@@ -120,6 +120,10 @@ fn main() {
     let rootfs_str = args.rootfs.to_string_lossy().to_string();
     input::start_input_system(args.width, args.height, &rootfs_str);
 
+    // Set up the rootfs environment (create required directories)
+    // This is needed for both normal and setup modes
+    setup_rootfs_environment(&args.rootfs);
+
     // Start fake gralloc (always enabled)
     let gralloc = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, args.width, args.height));
     gralloc.start();
@@ -149,8 +153,6 @@ fn main() {
         });
     } else {
         info!("Container startup skipped (setup mode).");
-        // Set up the rootfs environment (create directories for sockets)
-        setup_rootfs_environment(&args.rootfs);
         info!("To start the container manually, run: cd {:?} && ./init", args.rootfs);
         if let Some(ref loader) = args.loader {
             info!("Don't forget to set: export TYLOADER={:?}", loader);
@@ -224,6 +226,8 @@ fn setup_rootfs_environment(rootfs: &PathBuf) {
         "dev/graphics",
         // Shared memory directory
         "dev/shm",
+        // Android property system directory (required for init to initialize property area)
+        "dev/__properties__",
         // Data system directory
         "data/system",
     ];
