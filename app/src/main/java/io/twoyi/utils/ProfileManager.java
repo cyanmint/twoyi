@@ -282,7 +282,12 @@ public class ProfileManager {
     private String sanitizeForPath(String input) {
         // Keep only alphanumeric characters and limit length
         String sanitized = input.replaceAll("[^a-zA-Z0-9-]", "");
-        return sanitized.substring(0, Math.min(sanitized.length(), 32));
+        sanitized = sanitized.substring(0, Math.min(sanitized.length(), 32));
+        if (sanitized.isEmpty()) {
+            // Fallback value to avoid empty directory names
+            return "default";
+        }
+        return sanitized;
     }
 
     /**
