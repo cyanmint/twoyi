@@ -113,16 +113,20 @@
     <string name="default_server_address" translatable="false">127.0.0.1:8765</string>
 
     <!-- Scrcpy display mode -->
-    <string name="settings_key_adb_port">ADB Port</string>
-    <string name="settings_adb_port_summary">Port for scrcpy connections (default: 5555)</string>
+    <string name="settings_key_adb_address">ADB Address</string>
+    <string name="settings_adb_address_summary">Address for scrcpy connections (default: 127.0.0.1:5556)</string>
     <string name="settings_key_connect_scrcpy">Connect via Scrcpy</string>
     <string name="settings_connect_scrcpy_summary">Connect to container display using scrcpy protocol</string>
     <string name="scrcpy_connecting">Connecting via scrcpy to %1$s:%2$d...</string>
     <string name="scrcpy_connected">Connected to: %1$s</string>
     <string name="scrcpy_disconnected">Disconnected from scrcpy</string>
     <string name="scrcpy_error">Scrcpy error: %1$s</string>
-    <string name="adb_port_dialog_title">ADB Port</string>
-    <string name="adb_port_hint">Port number (e.g., 5555)</string>
+    <string name="adb_address_dialog_title">ADB Address</string>
+    <string name="adb_address_hint">address:port (e.g., 127.0.0.1:5556)</string>
+    <string name="invalid_address_format">Invalid address format. Use host:port (e.g., 127.0.0.1:5556)</string>
+
+    <!-- Navigation -->
+    <string name="press_back_again_to_exit">Press back again to return to settings</string>
 
     <!-- Local container settings -->
     <string name="settings_category_local">Local Container</string>

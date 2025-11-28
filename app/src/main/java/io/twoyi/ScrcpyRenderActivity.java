@@ -67,19 +67,21 @@ public class ScrcpyRenderActivity extends Activity implements View.OnTouchListen
         mLoadingLayout.setVisibility(View.VISIBLE);
         mLoadingView.startAnimation();
 
-        // Get server address from intent or settings
-        String serverAddress = getIntent().getStringExtra("server_address");
-        if (serverAddress == null || serverAddress.isEmpty()) {
-            serverAddress = AppKV.getStringConfig(this, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
+        // Get ADB address from intent or settings (format: host:port)
+        String adbAddress = getIntent().getStringExtra("adb_address");
+        if (adbAddress == null || adbAddress.isEmpty()) {
+            adbAddress = AppKV.getStringConfig(this, AppKV.ADB_ADDRESS, AppKV.DEFAULT_ADB_ADDRESS);
         }
 
-        // Parse host from server address
-        String[] parts = serverAddress.split(":");
+        // Parse host and port from ADB address
+        String[] parts = adbAddress.split(":");
         mServerHost = parts[0];
-
-        // Get ADB port from intent or settings
-        mAdbPort = getIntent().getIntExtra("adb_port", 
-            AppKV.getIntConfig(this, AppKV.ADB_PORT, AppKV.DEFAULT_ADB_PORT));
+        try {
+            mAdbPort = parts.length > 1 ? Integer.parseInt(parts[1]) : 5556;
+        } catch (NumberFormatException e) {
+            Log.w(TAG, "Invalid port in ADB address, using default: " + adbAddress);
+            mAdbPort = 5556;
+        }
 
         mLoadingText.setText(getString(R.string.scrcpy_connecting, mServerHost, mAdbPort));
 
@@ -233,13 +235,23 @@ public class ScrcpyRenderActivity extends Activity implements View.OnTouchListen
         return super.onKeyUp(keyCode, event);
     }
 
+    private long mLastBackPressTime = 0;
+    private static final long DOUBLE_BACK_PRESS_INTERVAL = 2000; // 2 seconds
+
     @Override
     public void onBackPressed() {
-        if (mScrcpyClient != null && mScrcpyClient.isConnected()) {
-            mScrcpyClient.sendKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK);
-            mScrcpyClient.sendKeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK);
-        } else {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - mLastBackPressTime < DOUBLE_BACK_PRESS_INTERVAL) {
+            // Double press - exit to settings
             super.onBackPressed();
+        } else {
+            // First press - send to container and show toast
+            mLastBackPressTime = currentTime;
+            if (mScrcpyClient != null && mScrcpyClient.isConnected()) {
+                mScrcpyClient.sendKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK);
+                mScrcpyClient.sendKeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK);
+            }
+            Toast.makeText(this, R.string.press_back_again_to_exit, Toast.LENGTH_SHORT).show();
         }
     }
 

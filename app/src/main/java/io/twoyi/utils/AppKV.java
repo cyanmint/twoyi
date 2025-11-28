@@ -36,9 +36,9 @@ public class AppKV {
     public static final String SERVER_ADDRESS = "server_address";
     public static final String DEFAULT_SERVER_ADDRESS = "127.0.0.1:8765";
 
-    // ADB port for scrcpy connections
-    public static final String ADB_PORT = "adb_port";
-    public static final int DEFAULT_ADB_PORT = 5555;
+    // ADB address for scrcpy connections (address:port format, like control port)
+    public static final String ADB_ADDRESS = "adb_address";
+    public static final String DEFAULT_ADB_ADDRESS = "127.0.0.1:5556";
 
     // Display mode: "scrcpy" or "legacy"
     // TODO: These constants are reserved for future use to configure display mode in the application.

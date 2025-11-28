@@ -114,7 +114,7 @@ public class SettingsActivity extends AppCompatActivity {
 
             // Server settings - use literal keys that match the XML
             Preference serverAddress = findPreference("server_address");
-            Preference adbPort = findPreference("adb_port");
+            Preference adbAddress = findPreference("adb_address");
             Preference startServer = findPreference("start_server");
             Preference connectServer = findPreference("connect_server");
             Preference connectScrcpy = findPreference("connect_scrcpy");
@@ -143,17 +143,17 @@ public class SettingsActivity extends AppCompatActivity {
             String currentAddress = AppKV.getStringConfig(getActivity(), AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
             serverAddress.setSummary(getString(R.string.settings_server_address_summary) + "\nCurrent: " + currentAddress);
 
-            // Update ADB port summary with current value
-            int currentAdbPort = AppKV.getIntConfig(getActivity(), AppKV.ADB_PORT, AppKV.DEFAULT_ADB_PORT);
-            adbPort.setSummary(getString(R.string.settings_adb_port_summary) + "\nCurrent: " + currentAdbPort);
+            // Update ADB address summary with current value
+            String currentAdbAddress = AppKV.getStringConfig(getActivity(), AppKV.ADB_ADDRESS, AppKV.DEFAULT_ADB_ADDRESS);
+            adbAddress.setSummary(getString(R.string.settings_adb_address_summary) + "\nCurrent: " + currentAdbAddress);
 
             serverAddress.setOnPreferenceClickListener(preference -> {
                 showServerAddressDialog();
                 return true;
             });
 
-            adbPort.setOnPreferenceClickListener(preference -> {
-                showAdbPortDialog();
+            adbAddress.setOnPreferenceClickListener(preference -> {
+                showAdbAddressDialog();
                 return true;
             });
 
@@ -452,49 +452,57 @@ public class SettingsActivity extends AppCompatActivity {
             }, "test-connection").start();
         }
 
-        private void showAdbPortDialog() {
+        private void showAdbAddressDialog() {
             Activity activity = getActivity();
-            int currentPort = AppKV.getIntConfig(activity, AppKV.ADB_PORT, AppKV.DEFAULT_ADB_PORT);
+            String currentAddress = AppKV.getStringConfig(activity, AppKV.ADB_ADDRESS, AppKV.DEFAULT_ADB_ADDRESS);
 
             EditText input = new EditText(activity);
-            input.setText(String.valueOf(currentPort));
-            input.setHint(R.string.adb_port_hint);
-            input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+            input.setText(currentAddress);
+            input.setHint(R.string.adb_address_hint);
 
             new AlertDialog.Builder(activity)
-                    .setTitle(R.string.adb_port_dialog_title)
+                    .setTitle(R.string.adb_address_dialog_title)
                     .setView(input)
                     .setPositiveButton(android.R.string.ok, (dialog, which) -> {
-                        String portStr = input.getText().toString().trim();
-                        if (!portStr.isEmpty()) {
-                            try {
-                                int newPort = Integer.parseInt(portStr);
-                                if (newPort > 0 && newPort < 65536) {
-                                    AppKV.setIntConfig(activity, AppKV.ADB_PORT, newPort);
-                                    Preference adbPortPref = findPreference("adb_port");
-                                    adbPortPref.setSummary(getString(R.string.settings_adb_port_summary) + "\nCurrent: " + newPort);
-                                }
-                            } catch (NumberFormatException ignored) {
+                        String newAddress = input.getText().toString().trim();
+                        if (!newAddress.isEmpty()) {
+                            // Validate address format (host:port)
+                            if (!isValidAddressFormat(newAddress)) {
+                                Toast.makeText(activity, R.string.invalid_address_format, Toast.LENGTH_SHORT).show();
+                                return;
                             }
+                            AppKV.setStringConfig(activity, AppKV.ADB_ADDRESS, newAddress);
+                            Preference adbAddressPref = findPreference("adb_address");
+                            adbAddressPref.setSummary(getString(R.string.settings_adb_address_summary) + "\nCurrent: " + newAddress);
                         }
                     })
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
         }
 
+        private boolean isValidAddressFormat(String address) {
+            if (address == null || address.isEmpty()) {
+                return false;
+            }
+            String[] parts = address.split(":");
+            if (parts.length != 2) {
+                return false;
+            }
+            try {
+                int port = Integer.parseInt(parts[1]);
+                return port > 0 && port < 65536;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+
         private void connectViaScrcpy() {
             Activity activity = getActivity();
-            String address = AppKV.getStringConfig(activity, AppKV.SERVER_ADDRESS, AppKV.DEFAULT_SERVER_ADDRESS);
-            int adbPort = AppKV.getIntConfig(activity, AppKV.ADB_PORT, AppKV.DEFAULT_ADB_PORT);
-
-            // Extract host from address
-            String[] parts = address.split(":");
-            String host = parts[0];
+            String adbAddress = AppKV.getStringConfig(activity, AppKV.ADB_ADDRESS, AppKV.DEFAULT_ADB_ADDRESS);
 
             // Launch the scrcpy renderer activity
             Intent intent = new Intent(activity, ScrcpyRenderActivity.class);
-            intent.putExtra("server_address", address);
-            intent.putExtra("adb_port", adbPort);
+            intent.putExtra("adb_address", adbAddress);
             startActivity(intent);
         }
 
