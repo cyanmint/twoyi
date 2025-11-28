@@ -42,6 +42,13 @@ Threetwi (based on Twoyi) is a lightweight Android container. It runs a nearly c
 
 ## Changes from Original Twoyi (since commit d3ce306)
 
+### Version 3.5.7
+
+#### Fixed Profile Switching Container Crashes
+- **ServerManager uses profile-specific boot files**: `ensureBootFiles()` now uses the profile's rootfs directory instead of the default path
+- **LogEvents uses profile-specific paths**: Bug reports now correctly collect tombstones and dropbox files from the active profile's rootfs directory
+- **LogEvents includes profile information**: Boot failure tracking now includes profile name and ID in error reports
+
 ### Version 3.5.6
 
 #### Profile-Specific Rootfs Initialization

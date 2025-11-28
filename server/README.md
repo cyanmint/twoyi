@@ -10,6 +10,13 @@ The threetwi-server is a Rust-based container server that runs the Android conta
 
 ## Changes from Original Twoyi (since commit d3ce306)
 
+### Version 3.5.7
+
+#### Fixed Profile Switching Container Crashes
+- Server correctly uses profile-specific boot files now
+- Boot files (dev/input, dev/socket, dev/maps) are created in the correct rootfs directory for each profile
+- Prevents crashes when switching between profiles with different rootfs paths
+
 ### Version 3.5.6
 
 #### Profile-Specific Rootfs Initialization

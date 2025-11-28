@@ -160,8 +160,8 @@ public class ServerManager {
         // Get loader path
         String loaderPath = RomManager.getLoaderPath(context);
 
-        // Ensure boot files exist
-        RomManager.ensureBootFiles(context);
+        // Ensure boot files exist in the profile-specific rootfs directory
+        RomManager.ensureBootFiles(context, rootfsDir);
 
         // Check if verbose debug is enabled (from profile or global setting)
         boolean verboseDebug = profile != null ? 

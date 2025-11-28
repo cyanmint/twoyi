@@ -47,11 +47,22 @@ public class LogEvents {
     public static void trackBootFailure(Context context) {
 
         Map<String, String> properties = new HashMap<>();
-        RomManager.RomInfo info = RomManager.getCurrentRomInfo(context);
+        
+        // Get ROM info from active profile's rootfs directory
+        ProfileManager profileManager = ProfileManager.getInstance(context);
+        Profile activeProfile = profileManager.getActiveProfile();
+        File rootfsDir = (activeProfile != null) ? 
+                profileManager.getRootfsDir(activeProfile) : 
+                RomManager.getRootfsDir(context);
+        RomManager.RomInfo info = RomManager.getCurrentRomInfo(rootfsDir);
 
         properties.put("rom_ver", String.valueOf(info.code));
         properties.put("rom_author", info.author);
         properties.put("rom_md5", info.md5);
+        if (activeProfile != null) {
+            properties.put("profile_name", activeProfile.getName());
+            properties.put("profile_id", activeProfile.getId());
+        }
 
         List<ErrorAttachmentLog> errors = new ArrayList<>();
 
@@ -127,8 +138,12 @@ public class LogEvents {
         }
         reportItems.add(ReportItem.create(serverLogFile));
 
-        // tombstones
-        File rootfsDir = RomManager.getRootfsDir(context);
+        // tombstones - use active profile's rootfs directory
+        ProfileManager profileManager = ProfileManager.getInstance(context);
+        Profile activeProfile = profileManager.getActiveProfile();
+        File rootfsDir = (activeProfile != null) ? 
+                profileManager.getRootfsDir(activeProfile) : 
+                RomManager.getRootfsDir(context);
         File romDataDir = new File(rootfsDir, "data");
         File tombstoneDir = new File(romDataDir, "tombstones");
         File[] tombstones = tombstoneDir.listFiles();
