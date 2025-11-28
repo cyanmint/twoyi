@@ -17,18 +17,18 @@ mod input;
 mod framebuffer;
 mod gralloc;
 
-/// Default ADB port for scrcpy connections
-const DEFAULT_ADB_PORT: u16 = 5555;
+/// Default ADB address for scrcpy connections
+const DEFAULT_ADB_ADDRESS: &str = "0.0.0.0:5556";
 
 #[derive(Parser, Debug)]
 #[command(name = "twoyi-server")]
 #[command(about = r#"twoyi container server
 
-This server runs the Android container and exposes the ADB port for scrcpy connections.
+This server runs the Android container and exposes the ADB address for scrcpy connections.
 The container uses a headless redroid-based ROM that works with scrcpy for display.
 
 Graphics are rendered via scrcpy which connects to the container's ADB daemon.
-Use 'scrcpy -s <address>:<adb_port>' to connect and view the display.
+Use 'scrcpy -s <adb_address>' to connect and view the display.
 
 The server also accepts control connections for configuration and monitoring."#, long_about = None)]
 struct Args {
@@ -44,9 +44,9 @@ struct Args {
     #[arg(short = 'b', long, default_value = "0.0.0.0:8765")]
     bind: String,
 
-    /// ADB port for scrcpy connections (forwarded to container's adbd)
-    #[arg(short = 'p', long, default_value_t = DEFAULT_ADB_PORT)]
-    adb_port: u16,
+    /// ADB address and port for scrcpy connections (e.g., 0.0.0.0:5556)
+    #[arg(short = 'a', long, default_value = DEFAULT_ADB_ADDRESS)]
+    adb_address: String,
 
     /// Screen width (used by container's display)
     #[arg(short = 'W', long, default_value_t = 1080)]
@@ -94,7 +94,7 @@ fn main() {
     info!("twoyi-server starting...");
     info!("Rootfs: {:?}", args.rootfs);
     info!("Control address: {}", args.bind);
-    info!("ADB port for scrcpy: {}", args.adb_port);
+    info!("ADB address for scrcpy: {}", args.adb_address);
     info!("Screen size: {}x{} @ {}dpi", args.width, args.height, args.dpi);
     info!("Verbose level: {}", args.verbose);
     if args.setup {
@@ -113,7 +113,7 @@ fn main() {
     // Print scrcpy connection info
     info!("=== SCRCPY DISPLAY ===");
     info!("This server uses scrcpy for display via the container's ADB.");
-    info!("Connect with: scrcpy -s <host>:{}", args.adb_port);
+    info!("Connect with: scrcpy -s {}", args.adb_address);
     info!("The container uses a headless redroid-based ROM.");
     info!("======================");
 
@@ -143,11 +143,11 @@ fn main() {
         None
     };
 
-    // Start ADB port forwarder (for scrcpy connections)
-    let adb_port = args.adb_port;
+    // Start ADB forwarder (for scrcpy connections)
+    let adb_address = args.adb_address.clone();
     let rootfs_for_adb = args.rootfs.clone();
     thread::spawn(move || {
-        start_adb_forwarder(adb_port, &rootfs_for_adb);
+        start_adb_forwarder(&adb_address, &rootfs_for_adb);
     });
 
     // Start container process (unless in setup mode)
@@ -205,7 +205,7 @@ fn main() {
     let _gralloc = fake_gralloc_instance;
 
     let setup_mode = args.setup;
-    let adb_port_for_clients = args.adb_port;
+    let adb_address_for_clients = args.adb_address.clone();
     let use_fake_gralloc_for_clients = use_fake_gralloc;
     for stream in listener.incoming() {
         match stream {
@@ -214,8 +214,9 @@ fn main() {
                 let height = args.height;
                 let rootfs = args.rootfs.clone();
                 let streamer = frame_streamer.clone();
+                let adb_addr = adb_address_for_clients.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, adb_port_for_clients, use_fake_gralloc_for_clients);
+                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, &adb_addr, use_fake_gralloc_for_clients);
                 });
             }
             Err(e) => {
@@ -282,21 +283,19 @@ fn setup_rootfs_environment(rootfs: &PathBuf) {
     // init process when it starts. We just need to ensure the directories exist.
 }
 
-/// Start the ADB port forwarder for scrcpy connections
-/// This listens on the specified port and forwards connections to the container's adbd
-fn start_adb_forwarder(port: u16, rootfs: &PathBuf) {
-    let bind_addr = format!("0.0.0.0:{}", port);
-
-    let listener = match TcpListener::bind(&bind_addr) {
+/// Start the ADB forwarder for scrcpy connections
+/// This listens on the specified address and forwards connections to the container's adbd
+fn start_adb_forwarder(adb_address: &str, rootfs: &PathBuf) {
+    let listener = match TcpListener::bind(adb_address) {
         Ok(l) => l,
         Err(e) => {
-            error!("Failed to bind ADB forwarder to {}: {}", bind_addr, e);
+            error!("Failed to bind ADB forwarder to {}: {}", adb_address, e);
             error!("scrcpy connections will not work!");
             return;
         }
     };
 
-    info!("ADB forwarder listening on {}", bind_addr);
+    info!("ADB forwarder listening on {}", adb_address);
 
     // The container's adbd listens on a Unix socket at /dev/socket/adbd
     // We need to forward TCP connections to this socket
@@ -563,7 +562,7 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
     }
 }
 
-fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>, adb_port: u16, fake_gralloc: bool) {
+fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>, adb_address: &str, fake_gralloc: bool) {
     let peer_addr = stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
     info!("Client connected from {}", peer_addr);
 
@@ -577,7 +576,7 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
         "status": status,
         "setup_mode": setup_mode,
         "streaming": true,
-        "adb_port": adb_port,
+        "adb_address": adb_address,
         "display_mode": display_mode,
         "fake_gralloc": fake_gralloc
     });

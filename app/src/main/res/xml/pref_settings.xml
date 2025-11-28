@@ -20,9 +20,9 @@
             android:title="@string/settings_key_server_address" />
 
         <Preference
-            android:key="adb_port"
-            android:summary="@string/settings_adb_port_summary"
-            android:title="@string/settings_key_adb_port" />
+            android:key="adb_address"
+            android:summary="@string/settings_adb_address_summary"
+            android:title="@string/settings_key_adb_address" />
 
         <Preference
             android:key="start_server"

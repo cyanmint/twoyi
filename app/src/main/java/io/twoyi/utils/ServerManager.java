@@ -171,6 +171,7 @@ public class ServerManager {
         
         if (verboseDebug) {
             command.add("--verbose");
+            command.add("vv");
             Log.i(TAG, "Verbose debug mode enabled");
             notifyOutputListeners("Verbose debug mode enabled");
         }

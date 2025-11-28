@@ -368,17 +368,27 @@ public class RemoteRenderActivity extends Activity implements View.OnTouchListen
         return super.onKeyDown(keyCode, event);
     }
 
+    private long mLastBackPressTime = 0;
+    private static final long DOUBLE_BACK_PRESS_INTERVAL = 2000; // 2 seconds
+
     @Override
     public void onBackPressed() {
-        if (mConnected.get() && mWriter != null) {
-            try {
-                String json = String.format(Locale.US, "{\"type\":\"key\",\"keycode\":%d}", KeyEvent.KEYCODE_BACK);
-                mWriter.println(json);
-            } catch (Exception e) {
-                Log.e(TAG, "Error sending back key", e);
-            }
-        } else {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - mLastBackPressTime < DOUBLE_BACK_PRESS_INTERVAL) {
+            // Double press - exit to settings
             super.onBackPressed();
+        } else {
+            // First press - send to container and show toast
+            mLastBackPressTime = currentTime;
+            if (mConnected.get() && mWriter != null) {
+                try {
+                    String json = String.format(Locale.US, "{\"type\":\"key\",\"keycode\":%d}", KeyEvent.KEYCODE_BACK);
+                    mWriter.println(json);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error sending back key", e);
+                }
+            }
+            Toast.makeText(this, R.string.press_back_again_to_exit, Toast.LENGTH_SHORT).show();
         }
     }
 
