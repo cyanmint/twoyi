@@ -183,4 +183,10 @@
     <string name="unsaved_changes_message">You have unsaved changes. What would you like to do?</string>
     <string name="save_and_exit">Save &amp; Exit</string>
     <string name="discard_changes">Discard</string>
+    <string name="profile_rootfs_internal_default">Default (Profile-specific)</string>
+    <string name="profile_rootfs_internal_custom">Custom Internal Path</string>
+    <string name="profile_rootfs_external">External Storage</string>
+    <string name="profile_rootfs_path_hint">Enter path (e.g., /data/user/0/io.twoyi/rootfs_custom)</string>
+    <string name="profile_rootfs_internal_hint">Enter a path within the app\'s data directory:\n%1$s</string>
+    <string name="profile_rootfs_invalid_path">Path must be within the app\'s internal storage</string>
 </resources>

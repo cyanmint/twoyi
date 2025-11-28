@@ -17,13 +17,11 @@ use log::info;
 
 const FF_MAX: u16 = 0x7f;
 
-const TOUCH_PATH: &'static str = "/data/data/io.twoyi/rootfs/dev/input/touch";
 const TOUCH_DEVICE_NAME: &'static str = "vtouch";
 const TOUCH_DEVICE_UNIQUE_ID: &'static str = "<vtouch 0>";
 
 const KEY_DEVICE_NAME: &'static str = "vkey";
 const KEY_DEVICE_UNIQUE_ID: &'static str = "<keyboard 0>";
-const KEY_PATH: &'static str = "/data/data/io.twoyi/rootfs/dev/input/key0";
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -63,12 +61,19 @@ const MAX_POINTERS: usize = 5;
 static INPUT_SENDER: Lazy<Mutex<Option<Sender<input_event>>>> = Lazy::new(|| { Mutex::new(None)});
 static KEY_SENDER: Lazy<Mutex<Option<Sender<input_event>>>> = Lazy::new(|| { Mutex::new(None)});
 
-pub fn start_input_system(width: i32, height: i32) {
+pub fn start_input_system(width: i32, height: i32, rootfs_path: &str) {
+    let touch_path = format!("{}/dev/input/touch", rootfs_path);
+    let key_path = format!("{}/dev/input/key0", rootfs_path);
+    
+    info!("Starting input system with touch: {}, key: {}", touch_path, key_path);
+    
+    let touch_path_clone = touch_path.clone();
     thread::spawn(move || {
-        touch_server(width, height);
+        touch_server(width, height, &touch_path_clone);
     });
-    thread::spawn(|| {
-        key_server();
+    
+    thread::spawn(move || {
+        key_server(&key_path);
     });
 }
 
@@ -194,7 +199,7 @@ pub fn handle_touch(ev: MotionEvent) {
     }
 }
 
-fn generate_touch_device(width: i32, height: i32) -> device_info {
+fn generate_touch_device(width: i32, height: i32, touch_path: &str) -> device_info {
     let iid = input_id {
         product: 0x1,
         version: 0,
@@ -220,7 +225,7 @@ fn generate_touch_device(width: i32, height: i32) -> device_info {
     };
 
     copy_to_cstr(TOUCH_DEVICE_NAME, &mut info.name);
-    copy_to_cstr(TOUCH_PATH, &mut info.physical_location);
+    copy_to_cstr(touch_path, &mut info.physical_location);
     copy_to_cstr(TOUCH_DEVICE_UNIQUE_ID, &mut info.unique_id);
 
     info.prop_bitmask[0] = INPUT_PROP_BUTTONPAD as u8;
@@ -245,10 +250,10 @@ fn generate_touch_device(width: i32, height: i32) -> device_info {
     info
 }
 
-fn touch_server(width: i32, height: i32) {
-    let device = generate_touch_device(width, height);
-    let _ = std::fs::remove_file(TOUCH_PATH);
-    let listener = unix_socket::UnixListener::bind(TOUCH_PATH).unwrap();
+fn touch_server(width: i32, height: i32, touch_path: &str) {
+    let device = generate_touch_device(width, height, touch_path);
+    let _ = std::fs::remove_file(touch_path);
+    let listener = unix_socket::UnixListener::bind(touch_path).unwrap();
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
@@ -277,14 +282,14 @@ fn touch_server(width: i32, height: i32) {
     info!("drop listener!");
 }
 
-fn generate_key_device() -> device_info {
+fn generate_key_device(key_path: &str) -> device_info {
     let mut info: device_info = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
 
     info.driver_version = 0x1;
     info.id.product = 0x1;
 
     copy_to_cstr(KEY_DEVICE_NAME, &mut info.name);
-    copy_to_cstr(KEY_PATH, &mut info.physical_location);
+    copy_to_cstr(key_path, &mut info.physical_location);
     copy_to_cstr(KEY_DEVICE_UNIQUE_ID, &mut info.unique_id);
 
     info.key_bitmask[14] = 0x1C;
@@ -300,10 +305,10 @@ pub fn send_key_code(_keycode: i32) {
     }
 }
 
-fn key_server() {
-    let device = generate_key_device();
-    let _ = std::fs::remove_file(KEY_PATH);
-    let listener = unix_socket::UnixListener::bind(KEY_PATH).unwrap();
+fn key_server(key_path: &str) {
+    let device = generate_key_device(key_path);
+    let _ = std::fs::remove_file(key_path);
+    let listener = unix_socket::UnixListener::bind(key_path).unwrap();
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {

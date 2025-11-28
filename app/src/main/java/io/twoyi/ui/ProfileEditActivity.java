@@ -151,10 +151,64 @@ public class ProfileEditActivity extends AppCompatActivity {
     }
 
     private void selectRootfsPath() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        startActivityForResult(intent, REQUEST_SELECT_ROOTFS);
+        // Show options: internal storage paths or custom path
+        String[] options = new String[]{
+            getString(R.string.profile_rootfs_internal_default),
+            getString(R.string.profile_rootfs_internal_custom),
+            getString(R.string.profile_rootfs_external)
+        };
+        
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.profile_select_rootfs)
+            .setItems(options, (dialog, which) -> {
+                switch (which) {
+                    case 0: // Default internal path (profile-specific)
+                        profile.setRootfsPath("");
+                        updateRootfsDisplay();
+                        break;
+                    case 1: // Custom internal path
+                        showInternalPathDialog();
+                        break;
+                    case 2: // External storage (document picker)
+                        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                        startActivityForResult(intent, REQUEST_SELECT_ROOTFS);
+                        break;
+                }
+            })
+            .show();
+    }
+
+    private void showInternalPathDialog() {
+        // Get internal storage base path
+        File dataDir = getDataDir();
+        String basePath = dataDir.getAbsolutePath();
+        
+        // Create EditText for custom path input
+        android.widget.EditText input = new android.widget.EditText(this);
+        input.setHint(R.string.profile_rootfs_path_hint);
+        input.setText(basePath + "/rootfs_custom");
+        input.setSelectAllOnFocus(true);
+        
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.profile_rootfs_internal_custom)
+            .setMessage(getString(R.string.profile_rootfs_internal_hint, basePath))
+            .setView(input)
+            .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                String customPath = input.getText().toString().trim();
+                if (!customPath.isEmpty()) {
+                    // Validate path is within app's data directory
+                    if (customPath.startsWith(basePath) || customPath.startsWith("/data/user/0/io.twoyi/") || customPath.startsWith("/data/data/io.twoyi/")) {
+                        profile.setRootfsPath(customPath);
+                        updateRootfsDisplay();
+                    } else {
+                        Toast.makeText(this, R.string.profile_rootfs_invalid_path, Toast.LENGTH_LONG).show();
+                    }
+                }
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     private void clearRootfsPath() {

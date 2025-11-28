@@ -39,12 +39,15 @@ import androidx.annotation.NonNull;
 
 import com.cleveroad.androidmanimation.LoadingAnimationView;
 
+import java.io.File;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.twoyi.utils.AppKV;
 import io.twoyi.utils.LogEvents;
 import io.twoyi.utils.NavUtils;
+import io.twoyi.utils.Profile;
+import io.twoyi.utils.ProfileManager;
 import io.twoyi.utils.RomManager;
 
 /**
@@ -56,6 +59,7 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
     private static final String TAG = "Render2Activity";
 
     private SurfaceView mSurfaceView;
+    private String mRootfsPath;
 
     private ViewGroup mRootView;
     private LoadingAnimationView mLoadingView;
@@ -77,9 +81,9 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             float xdpi = displayMetrics.xdpi;
             float ydpi = displayMetrics.ydpi;
 
-            Renderer.init(surface, RomManager.getLoaderPath(getApplicationContext()), xdpi, ydpi, (int) getBestFps());
+            Renderer.init(surface, RomManager.getLoaderPath(getApplicationContext()), mRootfsPath, xdpi, ydpi, (int) getBestFps());
 
-            Log.i(TAG, "surfaceCreated");
+            Log.i(TAG, "surfaceCreated with rootfs: " + mRootfsPath);
         }
 
         @Override
@@ -114,6 +118,18 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
         NavUtils.hideNavigation(getWindow());
 
         super.onCreate(savedInstanceState);
+
+        // Get rootfs path from active profile
+        ProfileManager profileManager = ProfileManager.getInstance(this);
+        Profile activeProfile = profileManager.getActiveProfile();
+        if (activeProfile != null) {
+            File rootfsDir = profileManager.getRootfsDir(activeProfile);
+            mRootfsPath = rootfsDir.getAbsolutePath();
+        } else {
+            // Fallback to default rootfs path
+            mRootfsPath = RomManager.getRootfsDir(this).getAbsolutePath();
+        }
+        Log.i(TAG, "Using rootfs path: " + mRootfsPath);
 
         setContentView(R.layout.ac_render);
         mRootView = findViewById(R.id.root);

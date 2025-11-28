@@ -11,9 +11,11 @@ use ndk_sys;
 use std::ffi::c_void;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::thread;
 
 use android_logger::Config;
+use once_cell::sync::Lazy;
 
 use std::fs::File;
 use std::process::{Command, Stdio};
@@ -36,6 +38,8 @@ macro_rules! jni_method {
 }
 
 static RENDERER_STARTED: AtomicBool = AtomicBool::new(false);
+// Global rootfs path for use by input system
+static ROOTFS_PATH: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
 
 #[no_mangle]
 pub fn renderer_init(
@@ -43,6 +47,7 @@ pub fn renderer_init(
     _clz: jclass,
     surface: jobject,
     loader: jstring,
+    rootfs: jstring,
     xdpi: jfloat,
     ydpi: jfloat,
     fps: jint,
@@ -68,6 +73,13 @@ pub fn renderer_init(
         width, height, fps
     );
 
+    // Get the rootfs path from the Java string
+    let rootfs_path: String = env.get_string(rootfs.into()).unwrap().into();
+    info!("rootfs path: {}", rootfs_path);
+    
+    // Store rootfs path globally for input system
+    *ROOTFS_PATH.lock().unwrap() = rootfs_path.clone();
+
     if RENDERER_STARTED.compare_exchange(false, true, 
         Ordering::Acquire, Ordering::Relaxed).is_err() {
         let win = window.ptr().as_ptr() as *mut c_void;
@@ -76,7 +88,7 @@ pub fn renderer_init(
             renderer_bindings::resetSubWindow(win, 0, 0, width, height, width, height, 1.0, 0.0);
         }
     } else {
-        input::start_input_system(width, height);
+        input::start_input_system(width, height, &rootfs_path);
 
         thread::spawn(move || {
             let win = window.ptr().as_ptr() as *mut c_void;
@@ -94,12 +106,14 @@ pub fn renderer_init(
         });
 
         let loader_path: String = env.get_string(loader.into()).unwrap().into();
-        let working_dir = "/data/data/io.twoyi/rootfs";
-        let log_path = "/data/data/io.twoyi/log.txt";
-        let outputs = File::create(log_path).unwrap();
+        let working_dir = rootfs_path.clone();
+        // Log file should be in parent directory of rootfs
+        let log_path = format!("{}/log.txt", std::path::Path::new(&rootfs_path).parent().unwrap_or(std::path::Path::new("/data/data/io.twoyi")).display());
+        info!("starting container in {}, log to {}", working_dir, log_path);
+        let outputs = File::create(&log_path).unwrap();
         let errors = outputs.try_clone().unwrap();
         let _ = Command::new("./init")
-            .current_dir(working_dir)
+            .current_dir(&working_dir)
             .env("TYLOADER", loader_path)
             .stdout(Stdio::from(outputs))
             .stderr(Stdio::from(errors))
@@ -195,7 +209,7 @@ unsafe fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
 
     let class_name: &str = "io/twoyi/Renderer";
     let jni_methods = [
-        jni_method!(init, renderer_init, "(Landroid/view/Surface;Ljava/lang/String;FFI)V"),
+        jni_method!(init, renderer_init, "(Landroid/view/Surface;Ljava/lang/String;Ljava/lang/String;FFI)V"),
         jni_method!(
             resetWindow,
             renderer_reset_window,
