@@ -137,6 +137,4 @@
     <string name="settings_category_debug">Debug</string>
     <string name="settings_verbose_debug_title">Verbose Debug Logging</string>
     <string name="settings_verbose_debug_summary">Enable extra verbose logging for debugging container issues</string>
-    <string name="settings_fake_gralloc_title">Fake Gralloc Device</string>
-    <string name="settings_fake_gralloc_summary">Create a fake gralloc0 device to capture graphics from legacy ROMs</string>
 </resources>
