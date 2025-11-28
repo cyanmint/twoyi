@@ -308,7 +308,8 @@ pub fn send_key_code(_keycode: i32) {
 fn key_server(key_path: &str) {
     let device = generate_key_device(key_path);
     let _ = std::fs::remove_file(key_path);
-    let listener = unix_socket::UnixListener::bind(key_path).unwrap();
+    let listener = unix_socket::UnixListener::bind(key_path)
+        .expect(&format!("Failed to bind UnixListener to path '{}'. Possible reasons: permission denied, path already exists, or parent directory doesn't exist.", key_path));
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
