@@ -81,7 +81,7 @@ pub fn renderer_init(
     info!("rootfs path: {}", rootfs_path);
     
     // Store rootfs path globally for input system
-    *ROOTFS_PATH.lock().unwrap() = rootfs_path.clone();
+    *ROOTFS_PATH.lock().expect("ROOTFS_PATH mutex poisoned in renderer_init") = rootfs_path.clone();
 
     if RENDERER_STARTED.compare_exchange(false, true, 
         Ordering::Acquire, Ordering::Relaxed).is_err() {
