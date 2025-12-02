@@ -116,9 +116,7 @@ impl FakeGralloc {
         // Set permissions (rw for all)
         fs::set_permissions(&gralloc_path, fs::Permissions::from_mode(0o666))?;
         // Store the listener to keep the socket alive
-        if let Ok(mut listener) = self.gralloc_listener.lock() {
-            *listener = Some(gralloc_listener);
-        }
+        *self.gralloc_listener.lock().expect("gralloc_listener lock poisoned") = Some(gralloc_listener);
 
         // Create the shared memory as a Unix socket for IPC
         let shm_path = self.gralloc_shm_path();
@@ -130,9 +128,7 @@ impl FakeGralloc {
         // Set permissions (rw for all)
         fs::set_permissions(&shm_path, fs::Permissions::from_mode(0o666))?;
         // Store the listener to keep the socket alive
-        if let Ok(mut listener) = self.gralloc_shm_listener.lock() {
-            *listener = Some(shm_listener);
-        }
+        *self.gralloc_shm_listener.lock().expect("gralloc_shm_listener lock poisoned") = Some(shm_listener);
 
         // Create the gralloc_info as a Unix socket for IPC
         let info_path = self.rootfs_path.join("dev/graphics/gralloc_info");
@@ -144,9 +140,7 @@ impl FakeGralloc {
         // Set permissions (rw for all)
         fs::set_permissions(&info_path, fs::Permissions::from_mode(0o666))?;
         // Store the listener to keep the socket alive
-        if let Ok(mut listener) = self.gralloc_info_listener.lock() {
-            *listener = Some(info_listener);
-        }
+        *self.gralloc_info_listener.lock().expect("gralloc_info_listener lock poisoned") = Some(info_listener);
 
         Ok(())
     }
