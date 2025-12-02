@@ -355,19 +355,20 @@ fn patch_single_file(
             }
         }
 
+        // Capture original permissions before writing
+        #[cfg(unix)]
+        let original_mode = {
+            use std::os::unix::fs::PermissionsExt;
+            fs::metadata(file_path).ok().map(|m| m.permissions().mode())
+        };
+
         fs::write(file_path, &content)
             .map_err(|e| format!("Failed to write {:?}: {}", file_path, e))?;
 
-        // Preserve executable permission
+        // Restore original permissions
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(metadata) = fs::metadata(file_path) {
-                let mode = metadata.permissions().mode();
-                if mode & 0o111 != 0 {
-                    let _ = fs::set_permissions(file_path, fs::Permissions::from_mode(mode));
-                }
-            }
+        if let Some(mode) = original_mode {
+            let _ = fs::set_permissions(file_path, std::fs::Permissions::from_mode(mode));
         }
 
         debug!("Patched file: {:?}", file_path);
