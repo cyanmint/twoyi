@@ -56,6 +56,10 @@ pub struct FakeGralloc {
     running: Arc<AtomicBool>,
     current_buffer: Arc<Mutex<Option<GrallocBuffer>>>,
     buffer_listeners: Arc<Mutex<Vec<Box<dyn Fn(&GrallocBuffer) + Send>>>>,
+    // Store socket listeners to keep them alive
+    gralloc_listener: Arc<Mutex<Option<unix_socket::UnixListener>>>,
+    gralloc_info_listener: Arc<Mutex<Option<unix_socket::UnixListener>>>,
+    gralloc_shm_listener: Arc<Mutex<Option<unix_socket::UnixListener>>>,
 }
 
 impl FakeGralloc {
@@ -68,6 +72,9 @@ impl FakeGralloc {
             running: Arc::new(AtomicBool::new(false)),
             current_buffer: Arc::new(Mutex::new(None)),
             buffer_listeners: Arc::new(Mutex::new(Vec::new())),
+            gralloc_listener: Arc::new(Mutex::new(None)),
+            gralloc_info_listener: Arc::new(Mutex::new(None)),
+            gralloc_shm_listener: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -103,33 +110,43 @@ impl FakeGralloc {
         let gralloc_path = self.gralloc_device_path();
         // Remove existing file/socket if it exists
         let _ = fs::remove_file(&gralloc_path);
-        // Create the socket by binding a UnixListener
-        let _gralloc_listener = unix_socket::UnixListener::bind(&gralloc_path)?;
+        // Create the socket by binding a UnixListener and store it to keep alive
+        let gralloc_listener = unix_socket::UnixListener::bind(&gralloc_path)?;
         info!("Created fake gralloc socket at {:?}", gralloc_path);
         // Set permissions (rw for all)
         fs::set_permissions(&gralloc_path, fs::Permissions::from_mode(0o666))?;
-
-        // Create the shared memory file for framebuffer data
-        let shm_path = self.gralloc_shm_path();
-        let fb_size = (self.width * self.height * 4) as usize; // RGBA
-        if !shm_path.exists() || fs::metadata(&shm_path).map(|m| m.len() as usize).unwrap_or(0) != fb_size {
-            let mut shm_file = File::create(&shm_path)?;
-            shm_file.set_len(fb_size as u64)?;
-            // Initialize with black
-            shm_file.write_all(&vec![0u8; fb_size])?;
-            info!("Created gralloc shared memory at {:?} ({} bytes)", shm_path, fb_size);
+        // Store the listener to keep the socket alive
+        if let Ok(mut listener) = self.gralloc_listener.lock() {
+            *listener = Some(gralloc_listener);
         }
+
+        // Create the shared memory as a Unix socket for IPC
+        let shm_path = self.gralloc_shm_path();
+        // Remove existing file/socket if it exists
+        let _ = fs::remove_file(&shm_path);
+        // Create the socket by binding a UnixListener and store it to keep alive
+        let shm_listener = unix_socket::UnixListener::bind(&shm_path)?;
+        info!("Created gralloc shared memory socket at {:?}", shm_path);
+        // Set permissions (rw for all)
         fs::set_permissions(&shm_path, fs::Permissions::from_mode(0o666))?;
+        // Store the listener to keep the socket alive
+        if let Ok(mut listener) = self.gralloc_shm_listener.lock() {
+            *listener = Some(shm_listener);
+        }
 
         // Create the gralloc_info as a Unix socket for IPC
         let info_path = self.rootfs_path.join("dev/graphics/gralloc_info");
         // Remove existing file/socket if it exists
         let _ = fs::remove_file(&info_path);
-        // Create the socket by binding a UnixListener
-        let _info_listener = unix_socket::UnixListener::bind(&info_path)?;
+        // Create the socket by binding a UnixListener and store it to keep alive
+        let info_listener = unix_socket::UnixListener::bind(&info_path)?;
         info!("Created gralloc info socket at {:?}", info_path);
         // Set permissions (rw for all)
         fs::set_permissions(&info_path, fs::Permissions::from_mode(0o666))?;
+        // Store the listener to keep the socket alive
+        if let Ok(mut listener) = self.gralloc_info_listener.lock() {
+            *listener = Some(info_listener);
+        }
 
         Ok(())
     }
