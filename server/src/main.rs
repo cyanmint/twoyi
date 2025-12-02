@@ -122,18 +122,41 @@ fn main() {
         std::process::exit(1);
     }
 
-    let init_path = args.rootfs.join("init");
+    // Convert rootfs to absolute path - this is critical!
+    // The init process needs absolute paths to work correctly when it re-execs itself.
+    let rootfs = match args.rootfs.canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            error!("Failed to canonicalize rootfs path {:?}: {}", args.rootfs, e);
+            std::process::exit(1);
+        }
+    };
+    info!("Resolved rootfs path: {:?}", rootfs);
+
+    // Also canonicalize loader path if provided
+    let loader = args.loader.as_ref().map(|p| {
+        if p.exists() {
+            p.canonicalize().unwrap_or_else(|_| p.clone())
+        } else {
+            p.clone()
+        }
+    });
+    if let Some(ref loader_path) = loader {
+        info!("Resolved loader path: {:?}", loader_path);
+    }
+
+    let init_path = rootfs.join("init");
     if !init_path.exists() {
         error!("init binary not found at: {:?}", init_path);
         std::process::exit(1);
     }
 
-    let rootfs_str = args.rootfs.to_string_lossy().to_string();
+    let rootfs_str = rootfs.to_string_lossy().to_string();
 
     // Patch all ROM binaries for custom rootfs path (only when --patch flag is provided)
     if args.patch {
-        let loader64_str = args.loader.as_ref().map(|p| p.to_string_lossy().to_string());
-        let loader32_str = args.loader.as_ref().map(|p| {
+        let loader64_str = loader.as_ref().map(|p| p.to_string_lossy().to_string());
+        let loader32_str = loader.as_ref().map(|p| {
             // Derive loader32 path from loader64 path (replace "loader64" with "loader32")
             let path_str = p.to_string_lossy().to_string();
             if path_str.ends_with("loader64") {
@@ -150,7 +173,7 @@ fn main() {
 
         info!("=== ROM PATCHING ===");
         match rom_patcher::patch_all_rom_files(
-            &args.rootfs,
+            &rootfs,
             loader64_str.as_deref(),
             loader32_str.as_deref(),
         ) {
@@ -185,7 +208,7 @@ fn main() {
 
     // Set up the rootfs environment (create required directories)
     // This is needed for both normal and setup modes
-    setup_rootfs_environment(&args.rootfs);
+    setup_rootfs_environment(&rootfs);
 
     // Start fake gralloc (always enabled)
     let gralloc = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, args.width, args.height));
@@ -194,7 +217,7 @@ fn main() {
 
     // Start ADB forwarder (for scrcpy connections)
     let adb_address = args.adb_address.clone();
-    let rootfs_for_adb = args.rootfs.clone();
+    let rootfs_for_adb = rootfs.clone();
     thread::spawn(move || {
         start_adb_forwarder(&adb_address, &rootfs_for_adb);
     });
@@ -204,8 +227,8 @@ fn main() {
 
     if !args.setup {
         let container_running_clone = container_running.clone();
-        let rootfs_clone = args.rootfs.clone();
-        let loader_clone = args.loader.clone();
+        let rootfs_clone = rootfs.clone();
+        let loader_clone = loader.clone();
         let verbose_clone = verbose_output;
         let width = args.width;
         let height = args.height;
@@ -216,9 +239,9 @@ fn main() {
         });
     } else {
         info!("Container startup skipped (setup mode).");
-        info!("To start the container manually, run: cd {:?} && ./init", args.rootfs);
-        if let Some(ref loader) = args.loader {
-            info!("Don't forget to set: export TYLOADER={:?}", loader);
+        info!("To start the container manually, run: cd {:?} && ./init", rootfs);
+        if let Some(ref loader_path) = loader {
+            info!("Don't forget to set: export TYLOADER={:?}", loader_path);
         }
     }
 
@@ -234,7 +257,7 @@ fn main() {
     info!("Control server listening on {}", args.bind);
 
     // Start framebuffer streamer using gralloc shared memory path
-    let fb_source = format!("{}/dev/shm/gralloc_fb", args.rootfs.to_string_lossy());
+    let fb_source = format!("{}/dev/shm/gralloc_fb", rootfs.to_string_lossy());
     let frame_streamer = Arc::new(framebuffer::FrameStreamer::new_with_path(
         args.width,
         args.height,
@@ -253,12 +276,12 @@ fn main() {
             Ok(stream) => {
                 let width = args.width;
                 let height = args.height;
-                let rootfs = args.rootfs.clone();
+                let rootfs_clone = rootfs.clone();
                 let streamer = frame_streamer.clone();
                 let adb_addr = adb_address_for_clients.clone();
                 let profile = profile_name.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, &adb_addr, &profile);
+                    handle_client(stream, width, height, &rootfs_clone, setup_mode, streamer, &adb_addr, &profile);
                 });
             }
             Err(e) => {
