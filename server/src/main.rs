@@ -369,6 +369,34 @@ fn setup_rootfs_environment(rootfs: &PathBuf) {
     info!("Directory setup complete: {} created, {} already existed",
           created_count, existed_count);
 
+    // Create symlinks for opengles sockets
+    // libOpenglRender.so creates sockets at hardcoded paths (/data/data/io.twoyi/rootfs/opengles*)
+    // For profile support, we create symlinks from the profile-specific rootfs to the default location
+    let default_rootfs = PathBuf::from("/data/data/io.twoyi/rootfs");
+    let opengles_sockets = ["opengles", "opengles2", "opengles3"];
+    
+    for socket_name in &opengles_sockets {
+        let profile_socket_path = rootfs.join(socket_name);
+        let default_socket_path = default_rootfs.join(socket_name);
+        
+        // Only create symlinks if using a non-default rootfs path
+        if rootfs.as_path() != default_rootfs.as_path() {
+            // Remove existing file/symlink if it exists
+            let _ = fs::remove_file(&profile_socket_path);
+            
+            // Create symlink from profile-specific location to default location
+            // The container will connect to $rootfs/opengles which points to /data/data/io.twoyi/rootfs/opengles
+            match std::os::unix::fs::symlink(&default_socket_path, &profile_socket_path) {
+                Ok(()) => {
+                    debug!("Created symlink: {:?} -> {:?}", profile_socket_path, default_socket_path);
+                }
+                Err(e) => {
+                    warn!("Failed to create symlink {:?} -> {:?}: {}", profile_socket_path, default_socket_path, e);
+                }
+            }
+        }
+    }
+
     // Note: Input sockets (dev/input/touch, dev/input/key0) are created by
     // start_input_system() when the server starts. Android system sockets
     // (property_service, vold, zygote, etc.) are created by the container's
