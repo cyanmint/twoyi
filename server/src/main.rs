@@ -22,6 +22,9 @@ mod rom_patcher;
 /// while app defaults to 127.0.0.1 for localhost connections
 const DEFAULT_ADB_ADDRESS: &str = "0.0.0.0:5556";
 
+/// Default binary name for help messages
+const DEFAULT_BINARY_NAME: &str = "twoyi-server";
+
 #[derive(Parser, Debug)]
 #[command(name = "twoyi-server")]
 #[command(about = r#"twoyi container server
@@ -122,18 +125,59 @@ fn main() {
         std::process::exit(1);
     }
 
-    let init_path = args.rootfs.join("init");
+    // Convert rootfs to absolute path - this is critical!
+    // The init process needs absolute paths to work correctly when it re-execs itself.
+    let rootfs = match args.rootfs.canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            error!("Failed to canonicalize rootfs path {:?}: {}", args.rootfs, e);
+            std::process::exit(1);
+        }
+    };
+    info!("Resolved rootfs path: {:?}", rootfs);
+
+    // Also canonicalize loader path if provided
+    let loader = args.loader.as_ref().map(|p| {
+        if p.exists() {
+            match p.canonicalize() {
+                Ok(canonical) => canonical,
+                Err(e) => {
+                    warn!("Failed to canonicalize loader path {:?}: {}, using original path", p, e);
+                    p.clone()
+                }
+            }
+        } else {
+            warn!("Loader path does not exist: {:?}, using as-is", p);
+            p.clone()
+        }
+    });
+    if let Some(ref loader_path) = loader {
+        info!("Resolved loader path: {:?}", loader_path);
+    }
+
+    let init_path = rootfs.join("init");
     if !init_path.exists() {
         error!("init binary not found at: {:?}", init_path);
         std::process::exit(1);
     }
 
-    let rootfs_str = args.rootfs.to_string_lossy().to_string();
+    let rootfs_str = rootfs.to_string_lossy().to_string();
+
+    // Check if we're using a non-default path without patching
+    // This is a common source of "container exits immediately" issues
+    if !args.patch && !rom_patcher::is_default_path(&rootfs_str) {
+        warn!("=== WARNING: Non-default rootfs path without --patch flag ===");
+        warn!("Rootfs path '{}' is not the default path.", rootfs_str);
+        warn!("The ROM binaries have hardcoded paths that may need patching.");
+        warn!("If the container fails to start, try running with --patch flag:");
+        warn!("  {} -r {:?} --patch ...", std::env::args().next().unwrap_or(DEFAULT_BINARY_NAME.to_string()), rootfs);
+        warn!("============================================================");
+    }
 
     // Patch all ROM binaries for custom rootfs path (only when --patch flag is provided)
     if args.patch {
-        let loader64_str = args.loader.as_ref().map(|p| p.to_string_lossy().to_string());
-        let loader32_str = args.loader.as_ref().map(|p| {
+        let loader64_str = loader.as_ref().map(|p| p.to_string_lossy().to_string());
+        let loader32_str = loader.as_ref().map(|p| {
             // Derive loader32 path from loader64 path (replace "loader64" with "loader32")
             let path_str = p.to_string_lossy().to_string();
             if path_str.ends_with("loader64") {
@@ -150,7 +194,7 @@ fn main() {
 
         info!("=== ROM PATCHING ===");
         match rom_patcher::patch_all_rom_files(
-            &args.rootfs,
+            &rootfs,
             loader64_str.as_deref(),
             loader32_str.as_deref(),
         ) {
@@ -185,7 +229,7 @@ fn main() {
 
     // Set up the rootfs environment (create required directories)
     // This is needed for both normal and setup modes
-    setup_rootfs_environment(&args.rootfs);
+    setup_rootfs_environment(&rootfs);
 
     // Start fake gralloc (always enabled)
     let gralloc = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, args.width, args.height));
@@ -194,7 +238,7 @@ fn main() {
 
     // Start ADB forwarder (for scrcpy connections)
     let adb_address = args.adb_address.clone();
-    let rootfs_for_adb = args.rootfs.clone();
+    let rootfs_for_adb = rootfs.clone();
     thread::spawn(move || {
         start_adb_forwarder(&adb_address, &rootfs_for_adb);
     });
@@ -204,8 +248,8 @@ fn main() {
 
     if !args.setup {
         let container_running_clone = container_running.clone();
-        let rootfs_clone = args.rootfs.clone();
-        let loader_clone = args.loader.clone();
+        let rootfs_clone = rootfs.clone();
+        let loader_clone = loader.clone();
         let verbose_clone = verbose_output;
         let width = args.width;
         let height = args.height;
@@ -216,9 +260,9 @@ fn main() {
         });
     } else {
         info!("Container startup skipped (setup mode).");
-        info!("To start the container manually, run: cd {:?} && ./init", args.rootfs);
-        if let Some(ref loader) = args.loader {
-            info!("Don't forget to set: export TYLOADER={:?}", loader);
+        info!("To start the container manually, run: cd {:?} && ./init", rootfs);
+        if let Some(ref loader_path) = loader {
+            info!("Don't forget to set: export TYLOADER={:?}", loader_path);
         }
     }
 
@@ -234,7 +278,7 @@ fn main() {
     info!("Control server listening on {}", args.bind);
 
     // Start framebuffer streamer using gralloc shared memory path
-    let fb_source = format!("{}/dev/shm/gralloc_fb", args.rootfs.to_string_lossy());
+    let fb_source = format!("{}/dev/shm/gralloc_fb", rootfs.to_string_lossy());
     let frame_streamer = Arc::new(framebuffer::FrameStreamer::new_with_path(
         args.width,
         args.height,
@@ -253,12 +297,12 @@ fn main() {
             Ok(stream) => {
                 let width = args.width;
                 let height = args.height;
-                let rootfs = args.rootfs.clone();
+                let rootfs_clone = rootfs.clone();
                 let streamer = frame_streamer.clone();
                 let adb_addr = adb_address_for_clients.clone();
                 let profile = profile_name.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs, setup_mode, streamer, &adb_addr, &profile);
+                    handle_client(stream, width, height, &rootfs_clone, setup_mode, streamer, &adb_addr, &profile);
                 });
             }
             Err(e) => {
@@ -489,6 +533,58 @@ fn forward_tcp_streams(mut client: TcpStream, mut server: TcpStream) {
     let _ = handle2.join();
 }
 
+/// Helper function to read from a stream and log lines with a prefix
+/// Returns a thread handle that reads from the stream until EOF
+fn spawn_stream_reader<R: Read + Send + 'static>(
+    mut stream: R,
+    prefix: &'static str,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let mut buffer = [0u8; 1024];
+        let mut line_buffer = String::new();
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => {
+                    // EOF - flush any remaining data
+                    if !line_buffer.is_empty() {
+                        info!("{} {}", prefix, line_buffer);
+                    }
+                    break;
+                }
+                Ok(n) => {
+                    // Convert bytes to string and process
+                    // Note: This may fail for partial UTF-8 sequences at buffer boundaries
+                    if let Ok(text) = std::str::from_utf8(&buffer[..n]) {
+                        for ch in text.chars() {
+                            if ch == '\n' {
+                                info!("{} {}", prefix, line_buffer);
+                                line_buffer.clear();
+                            } else {
+                                line_buffer.push(ch);
+                            }
+                        }
+                    } else {
+                        // If UTF-8 conversion fails, try to handle as lossy
+                        let text = String::from_utf8_lossy(&buffer[..n]);
+                        for ch in text.chars() {
+                            if ch == '\n' {
+                                info!("{} {}", prefix, line_buffer);
+                                line_buffer.clear();
+                            } else {
+                                line_buffer.push(ch);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!("Error reading {}: {}", prefix, e);
+                    break;
+                }
+            }
+        }
+    })
+}
+
 fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, width: i32, height: i32, dpi: i32) {
     let working_dir = rootfs.to_string_lossy().to_string();
     let log_path = rootfs.parent()
@@ -497,6 +593,25 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
 
     info!("Starting container in {}", working_dir);
     info!("Container log file: {:?}", log_path);
+
+    // Check if init binary is executable
+    let init_path = rootfs.join("init");
+    debug!("Init binary path: {:?}", init_path);
+    
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(&init_path) {
+            let mode = metadata.permissions().mode();
+            debug!("Init binary permissions: {:o}", mode);
+            if mode & 0o111 == 0 {
+                warn!("Init binary is not executable! Attempting to fix...");
+                if let Err(e) = fs::set_permissions(&init_path, fs::Permissions::from_mode(0o755)) {
+                    error!("Failed to make init executable: {}", e);
+                }
+            }
+        }
+    }
 
     let mut cmd = Command::new("./init");
     cmd.current_dir(&working_dir);
@@ -555,47 +670,55 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
         Ok(mut child) => {
             info!("Container process started with PID: {:?}", child.id());
 
+            let stdout_handle;
+            let stderr_handle;
+
             if verbose {
                 // In verbose mode, read and log stdout/stderr in real-time
                 let stdout = child.stdout.take();
                 let stderr = child.stderr.take();
 
-                // Spawn thread to read stdout
-                if let Some(stdout) = stdout {
-                    thread::spawn(move || {
-                        let reader = BufReader::new(stdout);
-                        for line in reader.lines() {
-                            match line {
-                                Ok(line) => info!("[container stdout] {}", line),
-                                Err(e) => {
-                                    debug!("Error reading container stdout: {}", e);
-                                    break;
-                                }
-                            }
-                        }
-                    });
-                }
-
-                // Spawn thread to read stderr
-                if let Some(stderr) = stderr {
-                    thread::spawn(move || {
-                        let reader = BufReader::new(stderr);
-                        for line in reader.lines() {
-                            match line {
-                                Ok(line) => info!("[container stderr] {}", line),
-                                Err(e) => {
-                                    debug!("Error reading container stderr: {}", e);
-                                    break;
-                                }
-                            }
-                        }
-                    });
-                }
+                // Spawn threads to read stdout/stderr using the helper function
+                stdout_handle = stdout.map(|s| spawn_stream_reader(s, "[container stdout]"));
+                stderr_handle = stderr.map(|s| spawn_stream_reader(s, "[container stderr]"));
+            } else {
+                stdout_handle = None;
+                stderr_handle = None;
             }
 
             match child.wait() {
-                Ok(status) => info!("Container exited with status: {}", status),
+                Ok(status) => {
+                    info!("Container exited with status: {}", status);
+                    if let Some(code) = status.code() {
+                        if code != 0 {
+                            error!("Container exited with error code {}. Common causes:", code);
+                            error!("  - Missing root/sudo privileges (try running as root)");
+                            error!("  - Missing kernel features (binder, ashmem, etc.)");
+                            error!("  - Incorrect loader library path");
+                            error!("  - SELinux/AppArmor restrictions");
+                        }
+                    }
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::process::ExitStatusExt;
+                        if let Some(signal) = status.signal() {
+                            error!("Container was killed by signal: {}", signal);
+                        }
+                    }
+                }
                 Err(e) => error!("Error waiting for container: {}", e),
+            }
+
+            // Wait for reader threads to finish (to capture any remaining output)
+            if let Some(handle) = stdout_handle {
+                if let Err(e) = handle.join() {
+                    warn!("Failed to join stdout reader thread: {:?}", e);
+                }
+            }
+            if let Some(handle) = stderr_handle {
+                if let Err(e) = handle.join() {
+                    warn!("Failed to join stderr reader thread: {:?}", e);
+                }
             }
         }
         Err(e) => {
