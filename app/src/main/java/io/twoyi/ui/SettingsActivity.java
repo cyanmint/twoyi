@@ -479,7 +479,8 @@ public class SettingsActivity extends AppCompatActivity {
                             activeProfile.isUse3rdPartyRom() :
                             AppKV.getBooleanConfig(activity, AppKV.SHOULD_USE_THIRD_PARTY_ROM, false);
                     
-                    RomManager.extractRootfs(activity.getApplicationContext(), rootfsDir, false, factoryRomUpdated, forceInstall, use3rdRom);
+                    // Skip patching in local container mode (last parameter = true)
+                    RomManager.extractRootfs(activity.getApplicationContext(), rootfsDir, false, factoryRomUpdated, forceInstall, use3rdRom, true);
                     RomManager.initRootfs(activity.getApplicationContext(), rootfsDir);
                     
                     activity.runOnUiThread(() -> {
