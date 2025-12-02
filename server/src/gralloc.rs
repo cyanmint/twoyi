@@ -7,10 +7,9 @@
 //! from the container's gralloc HAL. This allows the legacy ROM (which
 //! requires gralloc) to work without actual graphics hardware.
 
-use log::{info, debug, error, warn};
+use log::{info, debug, error};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -56,10 +55,6 @@ pub struct FakeGralloc {
     running: Arc<AtomicBool>,
     current_buffer: Arc<Mutex<Option<GrallocBuffer>>>,
     buffer_listeners: Arc<Mutex<Vec<Box<dyn Fn(&GrallocBuffer) + Send>>>>,
-    // Store socket listeners to keep them alive
-    gralloc_listener: Arc<Mutex<Option<unix_socket::UnixListener>>>,
-    gralloc_info_listener: Arc<Mutex<Option<unix_socket::UnixListener>>>,
-    gralloc_shm_listener: Arc<Mutex<Option<unix_socket::UnixListener>>>,
 }
 
 impl FakeGralloc {
@@ -72,9 +67,6 @@ impl FakeGralloc {
             running: Arc::new(AtomicBool::new(false)),
             current_buffer: Arc::new(Mutex::new(None)),
             buffer_listeners: Arc::new(Mutex::new(Vec::new())),
-            gralloc_listener: Arc::new(Mutex::new(None)),
-            gralloc_info_listener: Arc::new(Mutex::new(None)),
-            gralloc_shm_listener: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -93,7 +85,7 @@ impl FakeGralloc {
         self.rootfs_path.join("dev/shm/gralloc_fb")
     }
 
-    /// Create the fake gralloc device sockets
+    /// Create the fake gralloc device pipes
     pub fn setup_device(&self) -> Result<(), std::io::Error> {
         let dev_graphics = self.rootfs_path.join("dev/graphics");
         let dev_socket = self.rootfs_path.join("dev/socket");
@@ -106,41 +98,35 @@ impl FakeGralloc {
             }
         }
 
-        // Create the gralloc0 device as a Unix socket for IPC
+        // Helper function to create a named pipe (FIFO)
+        fn create_fifo(path: &PathBuf) -> Result<(), std::io::Error> {
+            use std::ffi::CString;
+            // Remove existing file/pipe if it exists
+            let _ = fs::remove_file(path);
+            // Create the named pipe
+            let path_cstr = CString::new(path.to_string_lossy().as_bytes())
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+            let result = unsafe { libc::mkfifo(path_cstr.as_ptr(), 0o666) };
+            if result != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        }
+
+        // Create the gralloc0 device as a named pipe
         let gralloc_path = self.gralloc_device_path();
-        // Remove existing file/socket if it exists
-        let _ = fs::remove_file(&gralloc_path);
-        // Create the socket by binding a UnixListener and store it to keep alive
-        let gralloc_listener = unix_socket::UnixListener::bind(&gralloc_path)?;
-        info!("Created fake gralloc socket at {:?}", gralloc_path);
-        // Set permissions (rw for all)
-        fs::set_permissions(&gralloc_path, fs::Permissions::from_mode(0o666))?;
-        // Store the listener to keep the socket alive
-        *self.gralloc_listener.lock().expect("gralloc_listener lock poisoned") = Some(gralloc_listener);
+        create_fifo(&gralloc_path)?;
+        info!("Created fake gralloc pipe at {:?}", gralloc_path);
 
-        // Create the shared memory as a Unix socket for IPC
+        // Create the shared memory as a named pipe
         let shm_path = self.gralloc_shm_path();
-        // Remove existing file/socket if it exists
-        let _ = fs::remove_file(&shm_path);
-        // Create the socket by binding a UnixListener and store it to keep alive
-        let shm_listener = unix_socket::UnixListener::bind(&shm_path)?;
-        info!("Created gralloc shared memory socket at {:?}", shm_path);
-        // Set permissions (rw for all)
-        fs::set_permissions(&shm_path, fs::Permissions::from_mode(0o666))?;
-        // Store the listener to keep the socket alive
-        *self.gralloc_shm_listener.lock().expect("gralloc_shm_listener lock poisoned") = Some(shm_listener);
+        create_fifo(&shm_path)?;
+        info!("Created gralloc shared memory pipe at {:?}", shm_path);
 
-        // Create the gralloc_info as a Unix socket for IPC
+        // Create the gralloc_info as a named pipe
         let info_path = self.rootfs_path.join("dev/graphics/gralloc_info");
-        // Remove existing file/socket if it exists
-        let _ = fs::remove_file(&info_path);
-        // Create the socket by binding a UnixListener and store it to keep alive
-        let info_listener = unix_socket::UnixListener::bind(&info_path)?;
-        info!("Created gralloc info socket at {:?}", info_path);
-        // Set permissions (rw for all)
-        fs::set_permissions(&info_path, fs::Permissions::from_mode(0o666))?;
-        // Store the listener to keep the socket alive
-        *self.gralloc_info_listener.lock().expect("gralloc_info_listener lock poisoned") = Some(info_listener);
+        create_fifo(&info_path)?;
+        info!("Created gralloc info pipe at {:?}", info_path);
 
         Ok(())
     }
