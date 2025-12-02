@@ -2,15 +2,16 @@
 # This is part of the threetwi project, a fork of twoyi (https://github.com/twoyi/twoyi).
 
 [package]
-name = "libtwoyi"
+name = "twoyi"
 version = "0.1.0"
 edition = "2021"
 
-# Build as a standalone executable that will be named libtwoyi.so in jniLibs
-# Android automatically extracts .so files from jniLibs to nativeLibraryDir
-[[bin]]
-name = "libtwoyi"
-path = "src/main.rs"
+# Build as a shared library (cdylib) for JNI support
+# The library can also be executed as a standalone binary via the main() export
+[lib]
+name = "twoyi"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
 
 [dependencies]
 libc = "0.2.112"
@@ -22,6 +23,8 @@ clap = { version = "4.4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 unix_socket = "0.5.0"
+jni = "0.21"
+android_logger = "0.13"
 
 [patch.crates-io]
 uinput-sys = { git = 'https://github.com/tiann/rust-uinput-sys' }
