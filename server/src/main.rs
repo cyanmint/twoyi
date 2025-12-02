@@ -585,13 +585,16 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
         Ok(mut child) => {
             info!("Container process started with PID: {:?}", child.id());
 
+            let stdout_handle;
+            let stderr_handle;
+
             if verbose {
                 // In verbose mode, read and log stdout/stderr in real-time
                 let stdout = child.stdout.take();
                 let stderr = child.stderr.take();
 
                 // Spawn thread to read stdout
-                if let Some(stdout) = stdout {
+                stdout_handle = stdout.map(|stdout| {
                     thread::spawn(move || {
                         let reader = BufReader::new(stdout);
                         for line in reader.lines() {
@@ -603,11 +606,11 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
                                 }
                             }
                         }
-                    });
-                }
+                    })
+                });
 
                 // Spawn thread to read stderr
-                if let Some(stderr) = stderr {
+                stderr_handle = stderr.map(|stderr| {
                     thread::spawn(move || {
                         let reader = BufReader::new(stderr);
                         for line in reader.lines() {
@@ -619,13 +622,24 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
                                 }
                             }
                         }
-                    });
-                }
+                    })
+                });
+            } else {
+                stdout_handle = None;
+                stderr_handle = None;
             }
 
             match child.wait() {
                 Ok(status) => info!("Container exited with status: {}", status),
                 Err(e) => error!("Error waiting for container: {}", e),
+            }
+
+            // Wait for reader threads to finish (to capture any remaining output)
+            if let Some(handle) = stdout_handle {
+                let _ = handle.join();
+            }
+            if let Some(handle) = stderr_handle {
+                let _ = handle.join();
             }
         }
         Err(e) => {
