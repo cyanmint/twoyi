@@ -170,7 +170,7 @@ fn main() {
         warn!("Rootfs path '{}' is not the default path.", rootfs_str);
         warn!("The ROM binaries have hardcoded paths that may need patching.");
         warn!("If the container fails to start, try running with --patch flag:");
-        warn!("  {} -r {:?} --patch ...", std::env::args().next().unwrap_or_else(|| DEFAULT_BINARY_NAME.to_string()), rootfs);
+        warn!("  {} -r {:?} --patch ...", std::env::args().next().unwrap_or(DEFAULT_BINARY_NAME.to_string()), rootfs);
         warn!("============================================================");
     }
 
@@ -533,6 +533,58 @@ fn forward_tcp_streams(mut client: TcpStream, mut server: TcpStream) {
     let _ = handle2.join();
 }
 
+/// Helper function to read from a stream and log lines with a prefix
+/// Returns a thread handle that reads from the stream until EOF
+fn spawn_stream_reader<R: Read + Send + 'static>(
+    mut stream: R,
+    prefix: &'static str,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let mut buffer = [0u8; 1024];
+        let mut line_buffer = String::new();
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => {
+                    // EOF - flush any remaining data
+                    if !line_buffer.is_empty() {
+                        info!("{} {}", prefix, line_buffer);
+                    }
+                    break;
+                }
+                Ok(n) => {
+                    // Convert bytes to string and process
+                    // Note: This may fail for partial UTF-8 sequences at buffer boundaries
+                    if let Ok(text) = std::str::from_utf8(&buffer[..n]) {
+                        for ch in text.chars() {
+                            if ch == '\n' {
+                                info!("{} {}", prefix, line_buffer);
+                                line_buffer.clear();
+                            } else {
+                                line_buffer.push(ch);
+                            }
+                        }
+                    } else {
+                        // If UTF-8 conversion fails, try to handle as lossy
+                        let text = String::from_utf8_lossy(&buffer[..n]);
+                        for ch in text.chars() {
+                            if ch == '\n' {
+                                info!("{} {}", prefix, line_buffer);
+                                line_buffer.clear();
+                            } else {
+                                line_buffer.push(ch);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!("Error reading {}: {}", prefix, e);
+                    break;
+                }
+            }
+        }
+    })
+}
+
 fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, width: i32, height: i32, dpi: i32) {
     let working_dir = rootfs.to_string_lossy().to_string();
     let log_path = rootfs.parent()
@@ -626,77 +678,9 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
                 let stdout = child.stdout.take();
                 let stderr = child.stderr.take();
 
-                // Spawn thread to read stdout (using byte-level reading for immediate output)
-                stdout_handle = stdout.map(|mut stdout| {
-                    thread::spawn(move || {
-                        let mut buffer = [0u8; 1024];
-                        let mut line_buffer = String::new();
-                        loop {
-                            match stdout.read(&mut buffer) {
-                                Ok(0) => {
-                                    // EOF - flush any remaining data
-                                    if !line_buffer.is_empty() {
-                                        info!("[container stdout] {}", line_buffer);
-                                    }
-                                    break;
-                                }
-                                Ok(n) => {
-                                    // Convert bytes to string and process
-                                    if let Ok(text) = std::str::from_utf8(&buffer[..n]) {
-                                        for ch in text.chars() {
-                                            if ch == '\n' {
-                                                info!("[container stdout] {}", line_buffer);
-                                                line_buffer.clear();
-                                            } else {
-                                                line_buffer.push(ch);
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    debug!("Error reading container stdout: {}", e);
-                                    break;
-                                }
-                            }
-                        }
-                    })
-                });
-
-                // Spawn thread to read stderr (using byte-level reading for immediate output)
-                stderr_handle = stderr.map(|mut stderr| {
-                    thread::spawn(move || {
-                        let mut buffer = [0u8; 1024];
-                        let mut line_buffer = String::new();
-                        loop {
-                            match stderr.read(&mut buffer) {
-                                Ok(0) => {
-                                    // EOF - flush any remaining data
-                                    if !line_buffer.is_empty() {
-                                        info!("[container stderr] {}", line_buffer);
-                                    }
-                                    break;
-                                }
-                                Ok(n) => {
-                                    // Convert bytes to string and process
-                                    if let Ok(text) = std::str::from_utf8(&buffer[..n]) {
-                                        for ch in text.chars() {
-                                            if ch == '\n' {
-                                                info!("[container stderr] {}", line_buffer);
-                                                line_buffer.clear();
-                                            } else {
-                                                line_buffer.push(ch);
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    debug!("Error reading container stderr: {}", e);
-                                    break;
-                                }
-                            }
-                        }
-                    })
-                });
+                // Spawn threads to read stdout/stderr using the helper function
+                stdout_handle = stdout.map(|s| spawn_stream_reader(s, "[container stdout]"));
+                stderr_handle = stderr.map(|s| spawn_stream_reader(s, "[container stderr]"));
             } else {
                 stdout_handle = None;
                 stderr_handle = None;
