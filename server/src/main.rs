@@ -70,7 +70,7 @@ struct Args {
     #[arg(short = 's', long)]
     setup: bool,
 
-    /// Patch the ROM init binary for custom rootfs path (run once, automatically detects real path)
+    /// Patch ROM binaries for custom rootfs path (run once, automatically detects real path)
     #[arg(short = 'P', long)]
     patch: bool,
 
