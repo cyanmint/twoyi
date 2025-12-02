@@ -24,21 +24,52 @@ import java.util.List;
  *   - /data/data/io.twoyi/loader64 (28 bytes)
  *   - /data/data/io.twoyi/loader32 (28 bytes)
  * 
+ * Additionally, derived paths in other ROM binaries:
+ *   - /data/data/io.twoyi/rootfs/dev/socket/property_service (54 bytes)
+ *   - /data/data/io.twoyi/rootfs/opengles (35 bytes)
+ *   - /data/data/io.twoyi/rootfs/opengles2 (36 bytes)
+ *   - /data/data/io.twoyi/rootfs/opengles3 (36 bytes)
+ *   - /data/data/io.twoyi/rootfs/vendor/lib64/egl/libGLESv1_CM_emulation.so (69 bytes)
+ *   - /data/data/io.twoyi/rootfs/vendor/lib64/egl/libGLESv2_emulation.so (66 bytes)
+ * 
  * This class provides methods to patch these paths to point to custom locations.
  */
 public class RomPatcher {
 
     private static final String TAG = "RomPatcher";
 
-    // Original hardcoded paths in the init binary
+    // Original hardcoded paths in the ROM binaries
     public static final String ORIG_ROOTFS = "/data/data/io.twoyi/rootfs";
     public static final String ORIG_LOADER64 = "/data/data/io.twoyi/loader64";
     public static final String ORIG_LOADER32 = "/data/data/io.twoyi/loader32";
+
+    // Derived paths (start with ORIG_ROOTFS)
+    public static final String ORIG_PROPERTY_SERVICE = "/data/data/io.twoyi/rootfs/dev/socket/property_service";
+    public static final String ORIG_OPENGLES = "/data/data/io.twoyi/rootfs/opengles";
+    public static final String ORIG_OPENGLES2 = "/data/data/io.twoyi/rootfs/opengles2";
+    public static final String ORIG_OPENGLES3 = "/data/data/io.twoyi/rootfs/opengles3";
+    public static final String ORIG_GLES1_EMU = "/data/data/io.twoyi/rootfs/vendor/lib64/egl/libGLESv1_CM_emulation.so";
+    public static final String ORIG_GLES2_EMU = "/data/data/io.twoyi/rootfs/vendor/lib64/egl/libGLESv2_emulation.so";
 
     // Maximum path lengths (must match original paths)
     public static final int MAX_ROOTFS_LEN = ORIG_ROOTFS.length();   // 26
     public static final int MAX_LOADER64_LEN = ORIG_LOADER64.length(); // 28
     public static final int MAX_LOADER32_LEN = ORIG_LOADER32.length(); // 28
+
+    // Files that need patching (relative to rootfs directory)
+    public static final String[] FILES_TO_PATCH = {
+        "init",
+        "sbin/charger",
+        "system/lib64/libc.so",
+        "system/lib64/libOpenglRender.so",
+        "system/lib64/libui.so",
+        "system/bin/adbd",
+        "system/bin/linker64",
+        "system/bin/mdnsd",
+        "system/vendor/lib64/egl/libEGL_emulation.so",
+        "system/vendor/lib64/libOpenglSystemCommon.so",
+        "system/xbin/su",
+    };
 
     /**
      * Check if the given rootfs directory is the default path that doesn't need patching.
@@ -359,5 +390,160 @@ public class RomPatcher {
             "Then use /data/ty1 as the rootfs path.",
             rootfsPath, rootfsPath.length(), MAX_ROOTFS_LEN, rootfsPath
         );
+    }
+
+    /**
+     * Patch a single binary file with all known hardcoded paths.
+     * 
+     * @param file The binary file to patch
+     * @param rootfsPath The new rootfs path
+     * @param loader64Path The new loader64 path
+     * @param loader32Path The new loader32 path
+     * @return true if the file was modified
+     * @throws IOException if file operations fail
+     */
+    private static boolean patchSingleFile(File file, String rootfsPath, 
+            String loader64Path, String loader32Path) throws IOException {
+        if (!file.exists()) {
+            Log.d(TAG, "File not found, skipping: " + file.getAbsolutePath());
+            return false;
+        }
+
+        byte[] content = readFile(file);
+        byte[] originalContent = content.clone();
+        boolean modified = false;
+
+        // Patch base paths
+        byte[] tempContent = replaceBytes(content, ORIG_ROOTFS, rootfsPath, MAX_ROOTFS_LEN);
+        if (tempContent != null) {
+            content = tempContent;
+            modified = true;
+        }
+
+        tempContent = replaceBytes(content, ORIG_LOADER64, loader64Path, MAX_LOADER64_LEN);
+        if (tempContent != null) {
+            content = tempContent;
+            modified = true;
+        }
+
+        tempContent = replaceBytes(content, ORIG_LOADER32, loader32Path, MAX_LOADER32_LEN);
+        if (tempContent != null) {
+            content = tempContent;
+            modified = true;
+        }
+
+        // Patch derived paths
+        String[][] derivedPaths = {
+            {ORIG_PROPERTY_SERVICE, rootfsPath + "/dev/socket/property_service"},
+            {ORIG_OPENGLES, rootfsPath + "/opengles"},
+            {ORIG_OPENGLES2, rootfsPath + "/opengles2"},
+            {ORIG_OPENGLES3, rootfsPath + "/opengles3"},
+            {ORIG_GLES1_EMU, rootfsPath + "/vendor/lib64/egl/libGLESv1_CM_emulation.so"},
+            {ORIG_GLES2_EMU, rootfsPath + "/vendor/lib64/egl/libGLESv2_emulation.so"},
+        };
+
+        for (String[] pathPair : derivedPaths) {
+            String origPath = pathPair[0];
+            String newPath = pathPair[1];
+            int origLen = origPath.length();
+            if (newPath.length() <= origLen) {
+                tempContent = replaceBytes(content, origPath, newPath, origLen);
+                if (tempContent != null) {
+                    content = tempContent;
+                    modified = true;
+                }
+            } else {
+                Log.d(TAG, "Derived path " + newPath + " is too long (" + 
+                      newPath.length() + " > " + origLen + "), skipping");
+            }
+        }
+
+        if (modified) {
+            // Create backup
+            File backupFile = new File(file.getAbsolutePath() + ".backup");
+            if (!backupFile.exists()) {
+                copyFile(file, backupFile);
+            }
+
+            writeFile(file, content);
+            file.setExecutable(true, false);
+            Log.d(TAG, "Patched file: " + file.getAbsolutePath());
+        }
+
+        return modified;
+    }
+
+    /**
+     * Patch all ROM files that contain hardcoded paths.
+     * 
+     * @param rootfsDir The rootfs directory
+     * @return number of files patched
+     * @throws IOException if file operations fail
+     * @throws IllegalArgumentException if paths are too long
+     */
+    public static int patchAllRomFiles(File rootfsDir) throws IOException {
+        String rootfsPath = rootfsDir.getAbsolutePath();
+        
+        // Derive loader paths from rootfs path
+        File parentDir = rootfsDir.getParentFile();
+        String loader64Path;
+        String loader32Path;
+        
+        if (parentDir != null) {
+            loader64Path = new File(parentDir, "loader64").getAbsolutePath();
+            loader32Path = new File(parentDir, "loader32").getAbsolutePath();
+        } else {
+            throw new IllegalArgumentException(
+                "Cannot derive loader paths: rootfs path has no parent directory: " + rootfsPath);
+        }
+
+        return patchAllRomFiles(rootfsDir, loader64Path, loader32Path);
+    }
+
+    /**
+     * Patch all ROM files that contain hardcoded paths.
+     * 
+     * @param rootfsDir The rootfs directory
+     * @param loader64Path The new loader64 path
+     * @param loader32Path The new loader32 path
+     * @return number of files patched
+     * @throws IOException if file operations fail
+     * @throws IllegalArgumentException if paths are too long
+     */
+    public static int patchAllRomFiles(File rootfsDir, String loader64Path, String loader32Path) 
+            throws IOException {
+        String rootfsPath = rootfsDir.getAbsolutePath();
+
+        // Validate path lengths
+        String validationError = validatePathLengths(rootfsPath, loader64Path, loader32Path);
+        if (validationError != null) {
+            throw new IllegalArgumentException(validationError);
+        }
+
+        Log.i(TAG, "Patching ROM files in " + rootfsDir.getAbsolutePath());
+        Log.i(TAG, "New rootfs path: " + rootfsPath);
+        Log.i(TAG, "New loader64 path: " + loader64Path);
+        Log.i(TAG, "New loader32 path: " + loader32Path);
+
+        int totalPatched = 0;
+        int totalErrors = 0;
+
+        for (String relativePath : FILES_TO_PATCH) {
+            File file = new File(rootfsDir, relativePath);
+            try {
+                if (patchSingleFile(file, rootfsPath, loader64Path, loader32Path)) {
+                    Log.i(TAG, "Patched: " + relativePath);
+                    totalPatched++;
+                } else {
+                    Log.d(TAG, "Skipped (not found or no changes): " + relativePath);
+                }
+            } catch (IOException e) {
+                Log.w(TAG, "Error patching " + relativePath + ": " + e.getMessage());
+                totalErrors++;
+            }
+        }
+
+        Log.i(TAG, "ROM patching complete: " + totalPatched + " files patched, " + totalErrors + " errors");
+        return totalPatched;
     }
 }

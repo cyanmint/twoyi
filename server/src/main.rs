@@ -130,7 +130,7 @@ fn main() {
 
     let rootfs_str = args.rootfs.to_string_lossy().to_string();
 
-    // Patch init binary for custom rootfs path (only when --patch flag is provided)
+    // Patch all ROM binaries for custom rootfs path (only when --patch flag is provided)
     if args.patch {
         let loader64_str = args.loader.as_ref().map(|p| p.to_string_lossy().to_string());
         let loader32_str = args.loader.as_ref().map(|p| {
@@ -148,18 +148,17 @@ fn main() {
             }
         });
 
-        info!("=== ROM INIT PATCHING ===");
-        match rom_patcher::patch_init_binary(
-            &init_path,
-            &rootfs_str,
+        info!("=== ROM PATCHING ===");
+        match rom_patcher::patch_all_rom_files(
+            &args.rootfs,
             loader64_str.as_deref(),
             loader32_str.as_deref(),
         ) {
             rom_patcher::PatchResult::Success => {
-                info!("ROM init binary successfully patched for custom paths");
+                info!("ROM binaries successfully patched for custom paths");
             }
             rom_patcher::PatchResult::AlreadyPatched => {
-                info!("ROM init binary already patched for current paths");
+                info!("ROM binaries already patched for current paths");
             }
             rom_patcher::PatchResult::DefaultPath => {
                 info!("Using default rootfs path, no patching needed");
