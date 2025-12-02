@@ -368,7 +368,8 @@ fn patch_single_file(
         // Restore original permissions
         #[cfg(unix)]
         if let Some(mode) = original_mode {
-            let _ = fs::set_permissions(file_path, std::fs::Permissions::from_mode(mode));
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(file_path, fs::Permissions::from_mode(mode));
         }
 
         debug!("Patched file: {:?}", file_path);
