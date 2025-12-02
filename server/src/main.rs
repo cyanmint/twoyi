@@ -165,7 +165,8 @@ fn main() {
 
     // Check if we're using a non-default path without patching
     // This is a common source of "container exits immediately" issues
-    if !args.patch && !rom_patcher::is_default_path(&rootfs_str) {
+    // Skip this warning for the default profile
+    if !args.patch && !rom_patcher::is_default_path(&rootfs_str) && args.profile != "default" {
         warn!("=== WARNING: Non-default rootfs path without --patch flag ===");
         warn!("Rootfs path '{}' is not the default path.", rootfs_str);
         warn!("The ROM binaries have hardcoded paths that may need patching.");
@@ -175,7 +176,8 @@ fn main() {
     }
 
     // Patch all ROM binaries for custom rootfs path (only when --patch flag is provided)
-    if args.patch {
+    // Skip patching for the default profile
+    if args.patch && args.profile != "default" {
         let loader64_str = loader.as_ref().map(|p| p.to_string_lossy().to_string());
         let loader32_str = loader.as_ref().map(|p| {
             // Derive loader32 path from loader64 path (replace "loader64" with "loader32")
@@ -222,6 +224,8 @@ fn main() {
             }
         }
         info!("=========================");
+    } else if args.patch && args.profile == "default" {
+        info!("Patching skipped for default profile");
     }
 
     // Start input system
@@ -364,6 +368,34 @@ fn setup_rootfs_environment(rootfs: &PathBuf) {
 
     info!("Directory setup complete: {} created, {} already existed",
           created_count, existed_count);
+
+    // Create symlinks for opengles sockets
+    // libOpenglRender.so creates sockets at hardcoded paths (/data/data/io.twoyi/rootfs/opengles*)
+    // For profile support, we create symlinks from the profile-specific rootfs to the default location
+    let default_rootfs = PathBuf::from("/data/data/io.twoyi/rootfs");
+    let opengles_sockets = ["opengles", "opengles2", "opengles3"];
+    
+    for socket_name in &opengles_sockets {
+        let profile_socket_path = rootfs.join(socket_name);
+        let default_socket_path = default_rootfs.join(socket_name);
+        
+        // Only create symlinks if using a non-default rootfs path
+        if rootfs.as_path() != default_rootfs.as_path() {
+            // Remove existing file/symlink if it exists
+            let _ = fs::remove_file(&profile_socket_path);
+            
+            // Create symlink from profile-specific location to default location
+            // The container will connect to $rootfs/opengles which points to /data/data/io.twoyi/rootfs/opengles
+            match std::os::unix::fs::symlink(&default_socket_path, &profile_socket_path) {
+                Ok(()) => {
+                    debug!("Created symlink: {:?} -> {:?}", profile_socket_path, default_socket_path);
+                }
+                Err(e) => {
+                    warn!("Failed to create symlink {:?} -> {:?}: {}", profile_socket_path, default_socket_path, e);
+                }
+            }
+        }
+    }
 
     // Note: Input sockets (dev/input/touch, dev/input/key0) are created by
     // start_input_system() when the server starts. Android system sockets
@@ -733,6 +765,15 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
 
     // Send initial info to client
     let status = if setup_mode { "setup" } else { "running" };
+    
+    // OpenGL ES socket paths - these are where libOpenglRender.so creates its sockets
+    // For the default rootfs, they're at /data/data/io.twoyi/rootfs/opengles*
+    // For profile-specific rootfs, we create symlinks pointing to the default location
+    let default_rootfs = "/data/data/io.twoyi/rootfs";
+    let opengles_path = format!("{}/opengles", default_rootfs);
+    let opengles2_path = format!("{}/opengles2", default_rootfs);
+    let opengles3_path = format!("{}/opengles3", default_rootfs);
+    
     let info = serde_json::json!({
         "width": width,
         "height": height,
@@ -743,7 +784,17 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
         "adb_address": adb_address,
         "display_mode": "fake_gralloc",
         "fake_gralloc": true,
-        "profile": profile_name
+        "profile": profile_name,
+        "sockets": {
+            "opengles": opengles_path,
+            "opengles2": opengles2_path,
+            "opengles3": opengles3_path,
+            "touch": format!("{}/dev/input/touch", rootfs.to_string_lossy()),
+            "key": format!("{}/dev/input/key0", rootfs.to_string_lossy()),
+            "gralloc": format!("{}/dev/graphics/gralloc0", rootfs.to_string_lossy()),
+            "gralloc_info": format!("{}/dev/graphics/gralloc_info", rootfs.to_string_lossy()),
+            "gralloc_fb": format!("{}/dev/shm/gralloc_fb", rootfs.to_string_lossy())
+        }
     });
 
     if let Ok(info_str) = serde_json::to_string(&info) {

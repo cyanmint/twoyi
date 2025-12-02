@@ -274,6 +274,14 @@ public final class RomManager {
     }
 
     public static void extractRootfs(Context context, boolean romExist, boolean needsUpgrade, boolean forceInstall, boolean use3rdRom) {
+        extractRootfs(context, romExist, needsUpgrade, forceInstall, use3rdRom, false);
+    }
+
+    /**
+     * Extract rootfs with optional patching skip
+     * @param skipPatching If true, skip ROM binary patching (for local container mode)
+     */
+    public static void extractRootfs(Context context, boolean romExist, boolean needsUpgrade, boolean forceInstall, boolean use3rdRom, boolean skipPatching) {
 
         // force remove system dir to avoiding wired issues
         removeSystemPartition(context);
@@ -281,21 +289,21 @@ public final class RomManager {
 
         if (!romExist) {
             // first init
-            extractRootfsInAssets(context);
+            extractRootfsInAssets(context, getRootfsDir(context), skipPatching);
             return;
         }
 
         if (forceInstall) {
             if (use3rdRom) {
                 // install 3rd rom
-                boolean success = extract3rdRootfs(context);
+                boolean success = extract3rdRootfs(context, skipPatching);
                 if (!success) {
                     showRootfsInstallationFailure(context);
                     return;
                 }
             } else {
                 // factory reset!!
-                if (!extractRootfsInAssets(context)) {
+                if (!extractRootfsInAssets(context, getRootfsDir(context), skipPatching)) {
                     showRootfsInstallationFailure(context);
                     return;
                 }
@@ -309,7 +317,7 @@ public final class RomManager {
             }
             if (needsUpgrade) {
                 Log.i(TAG, "upgrade factory rom..");
-                if (!extractRootfsInAssets(context)) {
+                if (!extractRootfsInAssets(context, getRootfsDir(context), skipPatching)) {
                     showRootfsInstallationFailure(context);
                 }
             }
@@ -320,6 +328,14 @@ public final class RomManager {
      * Extract rootfs to a specific directory (for profile support)
      */
     public static void extractRootfs(Context context, File rootfsDir, boolean romExist, boolean needsUpgrade, boolean forceInstall, boolean use3rdRom) {
+        extractRootfs(context, rootfsDir, romExist, needsUpgrade, forceInstall, use3rdRom, false);
+    }
+
+    /**
+     * Extract rootfs to a specific directory with optional patching skip
+     * @param skipPatching If true, skip ROM binary patching (for local container mode)
+     */
+    public static void extractRootfs(Context context, File rootfsDir, boolean romExist, boolean needsUpgrade, boolean forceInstall, boolean use3rdRom, boolean skipPatching) {
 
         // force remove system dir to avoiding wired issues
         removeSystemPartition(rootfsDir);
@@ -327,21 +343,21 @@ public final class RomManager {
 
         if (!romExist) {
             // first init
-            extractRootfsInAssets(context, rootfsDir);
+            extractRootfsInAssets(context, rootfsDir, skipPatching);
             return;
         }
 
         if (forceInstall) {
             if (use3rdRom) {
                 // install 3rd rom
-                boolean success = extract3rdRootfs(context, rootfsDir);
+                boolean success = extract3rdRootfs(context, rootfsDir, skipPatching);
                 if (!success) {
                     showRootfsInstallationFailure(context);
                     return;
                 }
             } else {
                 // factory reset!!
-                if (!extractRootfsInAssets(context, rootfsDir)) {
+                if (!extractRootfsInAssets(context, rootfsDir, skipPatching)) {
                     showRootfsInstallationFailure(context);
                     return;
                 }
@@ -355,7 +371,7 @@ public final class RomManager {
             }
             if (needsUpgrade) {
                 Log.i(TAG, "upgrade factory rom..");
-                if (!extractRootfsInAssets(context, rootfsDir)) {
+                if (!extractRootfsInAssets(context, rootfsDir, skipPatching)) {
                     showRootfsInstallationFailure(context);
                 }
             }
@@ -379,11 +395,19 @@ public final class RomManager {
     }
 
     public static boolean extract3rdRootfs(Context context) {
+        return extract3rdRootfs(context, false);
+    }
+
+    /**
+     * Extract 3rd party rootfs with optional patching skip
+     * @param skipPatching If true, skip ROM binary patching (for local container mode)
+     */
+    public static boolean extract3rdRootfs(Context context, boolean skipPatching) {
         File rootfs3rd = get3rdRootfsFile(context);
         if (!rootfs3rd.exists()) {
             return false;
         }
-        int err = extractRootfs(context, rootfs3rd);
+        int err = extractRootfs(getRootfsDir(context), rootfs3rd, skipPatching);
         return err == 0;
     }
 
@@ -391,11 +415,19 @@ public final class RomManager {
      * Extract 3rd party rootfs to a specific directory
      */
     public static boolean extract3rdRootfs(Context context, File rootfsDir) {
+        return extract3rdRootfs(context, rootfsDir, false);
+    }
+
+    /**
+     * Extract 3rd party rootfs to a specific directory with optional patching skip
+     * @param skipPatching If true, skip ROM binary patching (for local container mode)
+     */
+    public static boolean extract3rdRootfs(Context context, File rootfsDir, boolean skipPatching) {
         File rootfs3rd = get3rdRootfsFile(context);
         if (!rootfs3rd.exists()) {
             return false;
         }
-        int err = extractRootfs(rootfsDir, rootfs3rd);
+        int err = extractRootfs(rootfsDir, rootfs3rd, skipPatching);
         return err == 0;
     }
 
@@ -420,13 +452,23 @@ public final class RomManager {
 
     public static int extractRootfs(Context context, File rootfsArchive) {
         File rootfsDir = getRootfsDir(context);
-        return extractRootfs(rootfsDir, rootfsArchive);
+        return extractRootfs(rootfsDir, rootfsArchive, false);
     }
 
     /**
      * Extract rootfs archive to a specific directory
      */
     public static int extractRootfs(File rootfsDir, File rootfsArchive) {
+        return extractRootfs(rootfsDir, rootfsArchive, false);
+    }
+
+    /**
+     * Extract rootfs archive to a specific directory with optional patching skip
+     * @param rootfsDir The target directory
+     * @param rootfsArchive The archive file to extract
+     * @param skipPatching If true, skip ROM binary patching (for local container mode)
+     */
+    public static int extractRootfs(File rootfsDir, File rootfsArchive, boolean skipPatching) {
         
         // Ensure rootfs directory exists
         if (!rootfsDir.exists() && !rootfsDir.mkdirs()) {
@@ -505,9 +547,11 @@ public final class RomManager {
                 }
             }
             
-            // Patch all ROM binaries if this is a non-default path
+            // Patch all ROM binaries if this is a non-default path (unless skipPatching is true)
             String rootfsPath = rootfsDir.getAbsolutePath();
-            if (!RomPatcher.isDefaultPath(rootfsDir)) {
+            if (skipPatching) {
+                Log.i(TAG, "Skipping ROM patching (local container mode)");
+            } else if (!RomPatcher.isDefaultPath(rootfsDir)) {
                 Log.i(TAG, "Non-default rootfs path detected, patching ROM binaries...");
                 try {
                     int patchedCount = RomPatcher.patchAllRomFiles(rootfsDir);
@@ -567,13 +611,23 @@ public final class RomManager {
 
     public static boolean extractRootfsInAssets(Context context) {
         File rootfsDir = getRootfsDir(context);
-        return extractRootfsInAssets(context, rootfsDir);
+        return extractRootfsInAssets(context, rootfsDir, false);
     }
 
     /**
      * Extract rootfs from assets to a specific directory (for profile support)
      */
     public static boolean extractRootfsInAssets(Context context, File rootfsDir) {
+        return extractRootfsInAssets(context, rootfsDir, false);
+    }
+
+    /**
+     * Extract rootfs from assets to a specific directory with optional patching skip
+     * @param context The context
+     * @param rootfsDir The target directory
+     * @param skipPatching If true, skip ROM binary patching (for local container mode)
+     */
+    public static boolean extractRootfsInAssets(Context context, File rootfsDir, boolean skipPatching) {
         Log.i(TAG, "extractRootfsInAssets called for directory: " + rootfsDir.getAbsolutePath());
         
         // Ensure rootfs directory exists
@@ -617,7 +671,7 @@ public final class RomManager {
         long t2 = SystemClock.elapsedRealtime();
 
         Log.i(TAG, "Starting rootfs extraction from " + rootfsArchive.getAbsolutePath());
-        int ret = extractRootfs(rootfsDir, rootfsArchive);
+        int ret = extractRootfs(rootfsDir, rootfsArchive, skipPatching);
 
         long t3 = SystemClock.elapsedRealtime();
 
