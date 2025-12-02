@@ -542,6 +542,25 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
     info!("Starting container in {}", working_dir);
     info!("Container log file: {:?}", log_path);
 
+    // Check if init binary is executable
+    let init_path = rootfs.join("init");
+    debug!("Init binary path: {:?}", init_path);
+    
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(&init_path) {
+            let mode = metadata.permissions().mode();
+            debug!("Init binary permissions: {:o}", mode);
+            if mode & 0o111 == 0 {
+                warn!("Init binary is not executable! Attempting to fix...");
+                if let Err(e) = fs::set_permissions(&init_path, fs::Permissions::from_mode(0o755)) {
+                    error!("Failed to make init executable: {}", e);
+                }
+            }
+        }
+    }
+
     let mut cmd = Command::new("./init");
     cmd.current_dir(&working_dir);
 
@@ -607,13 +626,33 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
                 let stdout = child.stdout.take();
                 let stderr = child.stderr.take();
 
-                // Spawn thread to read stdout
-                stdout_handle = stdout.map(|stdout| {
+                // Spawn thread to read stdout (using byte-level reading for immediate output)
+                stdout_handle = stdout.map(|mut stdout| {
                     thread::spawn(move || {
-                        let reader = BufReader::new(stdout);
-                        for line in reader.lines() {
-                            match line {
-                                Ok(line) => info!("[container stdout] {}", line),
+                        let mut buffer = [0u8; 1024];
+                        let mut line_buffer = String::new();
+                        loop {
+                            match stdout.read(&mut buffer) {
+                                Ok(0) => {
+                                    // EOF - flush any remaining data
+                                    if !line_buffer.is_empty() {
+                                        info!("[container stdout] {}", line_buffer);
+                                    }
+                                    break;
+                                }
+                                Ok(n) => {
+                                    // Convert bytes to string and process
+                                    if let Ok(text) = std::str::from_utf8(&buffer[..n]) {
+                                        for ch in text.chars() {
+                                            if ch == '\n' {
+                                                info!("[container stdout] {}", line_buffer);
+                                                line_buffer.clear();
+                                            } else {
+                                                line_buffer.push(ch);
+                                            }
+                                        }
+                                    }
+                                }
                                 Err(e) => {
                                     debug!("Error reading container stdout: {}", e);
                                     break;
@@ -623,13 +662,33 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
                     })
                 });
 
-                // Spawn thread to read stderr
-                stderr_handle = stderr.map(|stderr| {
+                // Spawn thread to read stderr (using byte-level reading for immediate output)
+                stderr_handle = stderr.map(|mut stderr| {
                     thread::spawn(move || {
-                        let reader = BufReader::new(stderr);
-                        for line in reader.lines() {
-                            match line {
-                                Ok(line) => info!("[container stderr] {}", line),
+                        let mut buffer = [0u8; 1024];
+                        let mut line_buffer = String::new();
+                        loop {
+                            match stderr.read(&mut buffer) {
+                                Ok(0) => {
+                                    // EOF - flush any remaining data
+                                    if !line_buffer.is_empty() {
+                                        info!("[container stderr] {}", line_buffer);
+                                    }
+                                    break;
+                                }
+                                Ok(n) => {
+                                    // Convert bytes to string and process
+                                    if let Ok(text) = std::str::from_utf8(&buffer[..n]) {
+                                        for ch in text.chars() {
+                                            if ch == '\n' {
+                                                info!("[container stderr] {}", line_buffer);
+                                                line_buffer.clear();
+                                            } else {
+                                                line_buffer.push(ch);
+                                            }
+                                        }
+                                    }
+                                }
                                 Err(e) => {
                                     debug!("Error reading container stderr: {}", e);
                                     break;
