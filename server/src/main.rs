@@ -15,6 +15,7 @@ use std::path::PathBuf;
 mod input;
 mod framebuffer;
 mod gralloc;
+mod rom_patcher;
 
 /// Default ADB address for scrcpy connections (binds to all interfaces)
 /// Note: Server binds to 0.0.0.0 to accept connections from any interface,
@@ -69,6 +70,10 @@ struct Args {
     #[arg(short = 's', long)]
     setup: bool,
 
+    /// Patch the ROM init binary for custom rootfs path (run once, automatically detects real path)
+    #[arg(short = 'P', long)]
+    patch: bool,
+
     /// Profile name for identification (used for managing multiple containers)
     #[arg(short = 'p', long, default_value = "default")]
     profile: String,
@@ -96,6 +101,9 @@ fn main() {
         info!("Setup mode: enabled (container will NOT be started automatically)");
         info!("You can manually set up the environment and start the container later.");
     }
+    if args.patch {
+        info!("Patch mode: enabled (ROM init binary will be patched for custom paths)");
+    }
     info!("Fake gralloc: enabled (capturing graphics from legacy ROMs)");
     if let Some(ref loader) = args.loader {
         info!("Loader: {:?}", loader);
@@ -120,8 +128,60 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Start input system
     let rootfs_str = args.rootfs.to_string_lossy().to_string();
+
+    // Patch init binary for custom rootfs path (only when --patch flag is provided)
+    if args.patch {
+        let loader64_str = args.loader.as_ref().map(|p| p.to_string_lossy().to_string());
+        let loader32_str = args.loader.as_ref().map(|p| {
+            // Derive loader32 path from loader64 path (replace "loader64" with "loader32")
+            let path_str = p.to_string_lossy().to_string();
+            if path_str.ends_with("loader64") {
+                path_str.replace("loader64", "loader32")
+            } else if path_str.ends_with("64") {
+                format!("{}32", &path_str[..path_str.len()-2])
+            } else {
+                // Fallback: use parent directory + loader32
+                p.parent()
+                    .map(|parent| parent.join("loader32").to_string_lossy().to_string())
+                    .unwrap_or_else(|| path_str.clone())
+            }
+        });
+
+        info!("=== ROM INIT PATCHING ===");
+        match rom_patcher::patch_init_binary(
+            &init_path,
+            &rootfs_str,
+            loader64_str.as_deref(),
+            loader32_str.as_deref(),
+        ) {
+            rom_patcher::PatchResult::Success => {
+                info!("ROM init binary successfully patched for custom paths");
+            }
+            rom_patcher::PatchResult::AlreadyPatched => {
+                info!("ROM init binary already patched for current paths");
+            }
+            rom_patcher::PatchResult::DefaultPath => {
+                info!("Using default rootfs path, no patching needed");
+            }
+            rom_patcher::PatchResult::PathTooLong(msg) => {
+                error!("Path too long for ROM patching:\n{}", msg);
+                error!("Consider using symlinks to create shorter paths.");
+                std::process::exit(1);
+            }
+            rom_patcher::PatchResult::FileNotFound(msg) => {
+                error!("ROM patching failed: {}", msg);
+                std::process::exit(1);
+            }
+            rom_patcher::PatchResult::IoError(msg) => {
+                error!("ROM patching I/O error: {}", msg);
+                std::process::exit(1);
+            }
+        }
+        info!("=========================");
+    }
+
+    // Start input system
     input::start_input_system(args.width, args.height, &rootfs_str);
 
     // Set up the rootfs environment (create required directories)
