@@ -86,7 +86,7 @@ impl FakeGralloc {
         self.rootfs_path.join("dev/shm/gralloc_fb")
     }
 
-    /// Create the fake gralloc device files
+    /// Create the fake gralloc device sockets
     pub fn setup_device(&self) -> Result<(), std::io::Error> {
         let dev_graphics = self.rootfs_path.join("dev/graphics");
         let dev_socket = self.rootfs_path.join("dev/socket");
@@ -99,15 +99,13 @@ impl FakeGralloc {
             }
         }
 
-        // Create the gralloc0 device file
-        // This is a character device that the gralloc HAL opens
+        // Create the gralloc0 device as a Unix socket for IPC
         let gralloc_path = self.gralloc_device_path();
-        if !gralloc_path.exists() {
-            // Create as a regular file (we'll use a named pipe or socket for real IPC)
-            File::create(&gralloc_path)?;
-            info!("Created fake gralloc device at {:?}", gralloc_path);
-        }
-
+        // Remove existing file/socket if it exists
+        let _ = fs::remove_file(&gralloc_path);
+        // Create the socket by binding a UnixListener
+        let _gralloc_listener = unix_socket::UnixListener::bind(&gralloc_path)?;
+        info!("Created fake gralloc socket at {:?}", gralloc_path);
         // Set permissions (rw for all)
         fs::set_permissions(&gralloc_path, fs::Permissions::from_mode(0o666))?;
 
@@ -123,20 +121,15 @@ impl FakeGralloc {
         }
         fs::set_permissions(&shm_path, fs::Permissions::from_mode(0o666))?;
 
-        // Create a gralloc info file that tells the HAL where to find things
+        // Create the gralloc_info as a Unix socket for IPC
         let info_path = self.rootfs_path.join("dev/graphics/gralloc_info");
-        let info_content = format!(
-            "fake_gralloc=1\n\
-             width={}\n\
-             height={}\n\
-             format={}\n\
-             shm_path=/dev/shm/gralloc_fb\n\
-             socket_path=/dev/socket/gralloc\n",
-            self.width, self.height, format::HAL_PIXEL_FORMAT_RGBA_8888
-        );
-        fs::write(&info_path, info_content)?;
-        fs::set_permissions(&info_path, fs::Permissions::from_mode(0o644))?;
-        info!("Created gralloc info at {:?}", info_path);
+        // Remove existing file/socket if it exists
+        let _ = fs::remove_file(&info_path);
+        // Create the socket by binding a UnixListener
+        let _info_listener = unix_socket::UnixListener::bind(&info_path)?;
+        info!("Created gralloc info socket at {:?}", info_path);
+        // Set permissions (rw for all)
+        fs::set_permissions(&info_path, fs::Permissions::from_mode(0o666))?;
 
         Ok(())
     }
