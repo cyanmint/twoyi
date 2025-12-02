@@ -136,8 +136,15 @@ fn main() {
     // Also canonicalize loader path if provided
     let loader = args.loader.as_ref().map(|p| {
         if p.exists() {
-            p.canonicalize().unwrap_or_else(|_| p.clone())
+            match p.canonicalize() {
+                Ok(canonical) => canonical,
+                Err(e) => {
+                    warn!("Failed to canonicalize loader path {:?}: {}, using original path", p, e);
+                    p.clone()
+                }
+            }
         } else {
+            warn!("Loader path does not exist: {:?}, using as-is", p);
             p.clone()
         }
     });
