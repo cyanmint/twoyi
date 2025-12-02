@@ -83,12 +83,14 @@ jobs:
         echo '[target.aarch64-linux-android]' > server/.cargo/config.toml
         echo "linker = \"$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android27-clang\"" >> server/.cargo/config.toml
 
-    - name: Build twoyi-server for Android
+    - name: Build libtwoyi server for Android
       run: |
         cd server
         cargo build --release --target aarch64-linux-android
-        mkdir -p ../app/src/main/assets
-        cp target/aarch64-linux-android/release/twoyi-server ../app/src/main/assets/
+        # Copy as libtwoyi.so to jniLibs
+        # This naming convention allows Android to automatically extract it to nativeLibraryDir
+        mkdir -p ../app/src/main/jniLibs/arm64-v8a
+        cp target/aarch64-linux-android/release/libtwoyi ../app/src/main/jniLibs/arm64-v8a/libtwoyi.so
       env:
         ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
 
@@ -104,8 +106,8 @@ jobs:
         name: app-debug
         path: app/build/outputs/apk/debug/*.apk
 
-    - name: Upload Server Binary
+    - name: Upload libtwoyi Server Binary
       uses: actions/upload-artifact@v4
       with:
-        name: twoyi-server-android
-        path: server/target/aarch64-linux-android/release/twoyi-server
+        name: libtwoyi-android
+        path: app/src/main/jniLibs/arm64-v8a/libtwoyi.so

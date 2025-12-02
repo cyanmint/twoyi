@@ -2,12 +2,14 @@
 # This is part of the threetwi project, a fork of twoyi (https://github.com/twoyi/twoyi).
 
 [package]
-name = "twoyi-server"
+name = "libtwoyi"
 version = "0.1.0"
 edition = "2021"
 
+# Build as a standalone executable that will be named libtwoyi.so in jniLibs
+# Android automatically extracts .so files from jniLibs to nativeLibraryDir
 [[bin]]
-name = "twoyi-server"
+name = "libtwoyi"
 path = "src/main.rs"
 
 [dependencies]
