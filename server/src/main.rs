@@ -703,7 +703,25 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
             }
 
             match child.wait() {
-                Ok(status) => info!("Container exited with status: {}", status),
+                Ok(status) => {
+                    info!("Container exited with status: {}", status);
+                    if let Some(code) = status.code() {
+                        if code != 0 {
+                            error!("Container exited with error code {}. Common causes:", code);
+                            error!("  - Missing root/sudo privileges (try running as root)");
+                            error!("  - Missing kernel features (binder, ashmem, etc.)");
+                            error!("  - Incorrect loader library path");
+                            error!("  - SELinux/AppArmor restrictions");
+                        }
+                    }
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::process::ExitStatusExt;
+                        if let Some(signal) = status.signal() {
+                            error!("Container was killed by signal: {}", signal);
+                        }
+                    }
+                }
                 Err(e) => error!("Error waiting for container: {}", e),
             }
 
