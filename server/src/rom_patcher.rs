@@ -450,6 +450,26 @@ pub fn patch_all_rom_files(
         }
     }
 
+    // Also patch the loader64 binary itself (located outside rootfs)
+    let loader64_file = PathBuf::from(&loader64);
+    if loader64_file.exists() {
+        match patch_single_file(&loader64_file, &rootfs_path, &loader64, &loader32) {
+            Ok(true) => {
+                info!("Patched loader64: {}", loader64);
+                total_patched += 1;
+            }
+            Ok(false) => {
+                debug!("Skipped loader64 (no changes): {}", loader64);
+            }
+            Err(e) => {
+                warn!("Error patching loader64 {}: {}", loader64, e);
+                total_errors += 1;
+            }
+        }
+    } else {
+        debug!("loader64 not found at {}, skipping", loader64);
+    }
+
     if total_patched > 0 {
         info!("ROM patching complete: {} files patched, {} errors", total_patched, total_errors);
         PatchResult::Success

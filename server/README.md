@@ -61,9 +61,10 @@ Options:
 The ROM has multiple binary files with hardcoded paths that need to be patched when using a custom rootfs location.
 
 **Files patched:**
-- `init`, `sbin/charger`, `system/lib64/libc.so`, `system/bin/adbd`, `system/bin/linker64`
-- `system/bin/mdnsd`, `system/xbin/su`, `system/lib64/libOpenglRender.so`, `system/lib64/libui.so`
-- `system/vendor/lib64/egl/libEGL_emulation.so`, `system/vendor/lib64/libOpenglSystemCommon.so`
+- ROM files: `init`, `sbin/charger`, `system/lib64/libc.so`, `system/bin/adbd`, `system/bin/linker64`
+- ROM files: `system/bin/mdnsd`, `system/xbin/su`, `system/lib64/libOpenglRender.so`, `system/lib64/libui.so`
+- ROM files: `system/vendor/lib64/egl/libEGL_emulation.so`, `system/vendor/lib64/libOpenglSystemCommon.so`
+- Loader: `loader64` binary (located outside rootfs)
 
 **Hardcoded paths patched:**
 - `/data/data/io.twoyi/rootfs` (26 chars max) - base path
@@ -73,9 +74,9 @@ The ROM has multiple binary files with hardcoded paths that need to be patched w
 - `/data/data/io.twoyi/rootfs/opengles*` (35-36 chars) - OpenGL sockets
 - `/data/data/io.twoyi/rootfs/vendor/lib64/egl/libGLES*.so` (66-69 chars) - GLES emulation libs
 
-**In the Android app:** Patching is done automatically during ROM extraction. No manual action required.
+**In the Android app:** Patching is done automatically during ROM extraction (except loader64, which is shared across profiles).
 
-**For standalone server usage:** Use the `-P` or `--patch` flag to patch all ROM binaries:
+**For standalone server usage:** Use the `-P` or `--patch` flag to patch all ROM binaries and loader64:
 
 ```bash
 # Patch the ROM for a custom rootfs path (run once after extracting ROM)
