@@ -410,7 +410,6 @@ public class RomPatcher {
         }
 
         byte[] content = readFile(file);
-        byte[] originalContent = content.clone();
         boolean modified = false;
 
         // Patch base paths

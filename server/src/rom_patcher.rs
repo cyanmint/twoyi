@@ -463,7 +463,7 @@ pub fn patch_all_rom_files(
 
 /// Restore the init binary from backup
 pub fn restore_from_backup(init_path: &PathBuf) -> Result<(), String> {
-    let backup_path = PathBuf::from(format!("{}.backup", init_path.to_string_lossy()));
+    let backup_path = get_backup_path(init_path);
     
     if !backup_path.exists() {
         return Err(format!("Backup file does not exist: {:?}", backup_path));
