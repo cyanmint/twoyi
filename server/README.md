@@ -52,7 +52,44 @@ Options:
   -d, --dpi <DPI>           Screen DPI (default: 320)
   -v, --verbose <LEVEL>     Verbose level: "none", "v" (default), "vv"
   -s, --setup               Setup mode - start server without launching container
+  -P, --patch               Patch ROM binaries for custom rootfs path (run once)
   -p, --profile <NAME>      Profile name for identification (default: "default")
+```
+
+#### ROM Binary Patching
+
+The ROM has multiple binary files with hardcoded paths that need to be patched when using a custom rootfs location.
+
+**Files patched:**
+- ROM files: `init`, `sbin/charger`, `system/lib64/libc.so`, `system/bin/adbd`, `system/bin/linker64`
+- ROM files: `system/bin/mdnsd`, `system/xbin/su`, `system/lib64/libOpenglRender.so`, `system/lib64/libui.so`
+- ROM files: `system/vendor/lib64/egl/libEGL_emulation.so`, `system/vendor/lib64/libOpenglSystemCommon.so`
+- Loader: `loader64` binary (located outside rootfs)
+
+**Hardcoded paths patched:**
+- `/data/data/io.twoyi/rootfs` (26 chars max) - base path
+- `/data/data/io.twoyi/loader64` (28 chars max) - loader path
+- `/data/data/io.twoyi/loader32` (28 chars max) - loader path
+- `/data/data/io.twoyi/rootfs/dev/socket/property_service` (54 chars) - property service socket
+- `/data/data/io.twoyi/rootfs/opengles*` (35-36 chars) - OpenGL sockets
+- `/data/data/io.twoyi/rootfs/vendor/lib64/egl/libGLES*.so` (66-69 chars) - GLES emulation libs
+
+**In the Android app:** Patching is done automatically during ROM extraction (except loader64, which is shared across profiles).
+
+**For standalone server usage:** Use the `-P` or `--patch` flag to patch all ROM binaries and loader64:
+
+```bash
+# Patch the ROM for a custom rootfs path (run once after extracting ROM)
+twoyi-server -r /data/ty1 -P
+
+# After patching, run normally without -P
+twoyi-server -r /data/ty1
+```
+
+**Note:** If your base path exceeds 26 characters, create symlinks to create shorter paths:
+```bash
+ln -s /data/data/com.termux/files/home/rootfs /data/ty1
+twoyi-server -r /data/ty1 -P
 ```
 
 ## Building

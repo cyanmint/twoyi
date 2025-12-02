@@ -505,33 +505,28 @@ public final class RomManager {
                 }
             }
             
-            // Patch the init binary if this is a non-default path
+            // Patch all ROM binaries if this is a non-default path
             String rootfsPath = rootfsDir.getAbsolutePath();
             if (!RomPatcher.isDefaultPath(rootfsDir)) {
-                Log.i(TAG, "Non-default rootfs path detected, patching init binary...");
-                File initFile = new File(rootfsDir, "init");
-                if (initFile.exists()) {
-                    try {
-                        boolean patched = RomPatcher.patchInitBinary(initFile, rootfsPath);
-                        if (patched) {
-                            Log.i(TAG, "Successfully patched init binary for path: " + rootfsPath);
-                        } else {
-                            Log.w(TAG, "Init binary patching returned false - may already be patched");
-                        }
-                    } catch (IllegalArgumentException e) {
-                        Log.e(TAG, "Path too long for patching: " + e.getMessage());
-                        String recommendation = RomPatcher.getShortPathRecommendation(rootfsPath);
-                        if (recommendation != null) {
-                            Log.e(TAG, recommendation);
-                        }
-                        return -2; // Path too long error
-                    } catch (IOException e) {
-                        Log.e(TAG, "Failed to patch init binary", e);
-                        LogEvents.trackError(e);
-                        // Continue anyway - the ROM might still work if paths match
+                Log.i(TAG, "Non-default rootfs path detected, patching ROM binaries...");
+                try {
+                    int patchedCount = RomPatcher.patchAllRomFiles(rootfsDir);
+                    if (patchedCount > 0) {
+                        Log.i(TAG, "Successfully patched " + patchedCount + " ROM files for path: " + rootfsPath);
+                    } else {
+                        Log.w(TAG, "No ROM files were patched - may already be patched");
                     }
-                } else {
-                    Log.w(TAG, "Init file not found after extraction: " + initFile.getAbsolutePath());
+                } catch (IllegalArgumentException e) {
+                    Log.e(TAG, "Path too long for patching: " + e.getMessage());
+                    String recommendation = RomPatcher.getShortPathRecommendation(rootfsPath);
+                    if (recommendation != null) {
+                        Log.e(TAG, recommendation);
+                    }
+                    return -2; // Path too long error
+                } catch (IOException e) {
+                    Log.e(TAG, "Failed to patch ROM binaries", e);
+                    LogEvents.trackError(e);
+                    // Continue anyway - the ROM might still work if paths match
                 }
             }
             
