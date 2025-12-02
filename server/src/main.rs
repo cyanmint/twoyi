@@ -165,7 +165,8 @@ fn main() {
 
     // Check if we're using a non-default path without patching
     // This is a common source of "container exits immediately" issues
-    if !args.patch && !rom_patcher::is_default_path(&rootfs_str) {
+    // Skip this warning for the default profile
+    if !args.patch && !rom_patcher::is_default_path(&rootfs_str) && args.profile != "default" {
         warn!("=== WARNING: Non-default rootfs path without --patch flag ===");
         warn!("Rootfs path '{}' is not the default path.", rootfs_str);
         warn!("The ROM binaries have hardcoded paths that may need patching.");
@@ -175,7 +176,8 @@ fn main() {
     }
 
     // Patch all ROM binaries for custom rootfs path (only when --patch flag is provided)
-    if args.patch {
+    // Skip patching for the default profile
+    if args.patch && args.profile != "default" {
         let loader64_str = loader.as_ref().map(|p| p.to_string_lossy().to_string());
         let loader32_str = loader.as_ref().map(|p| {
             // Derive loader32 path from loader64 path (replace "loader64" with "loader32")
@@ -222,6 +224,8 @@ fn main() {
             }
         }
         info!("=========================");
+    } else if args.patch && args.profile == "default" {
+        info!("Patching skipped for default profile");
     }
 
     // Start input system
