@@ -153,8 +153,8 @@ When using the threetwi app with profiles that have custom rootfs paths, the ROM
 For manual ROM setup or use outside the app, use the `scripts/prepare_rom.sh` script:
 
 ```bash
-# Extract the ROM (example using 7z)
-7z x rootfs.7z
+# Extract the ROM (using tar)
+tar -xzf rootfs.tar.gz
 
 # Patch the ROM for a custom path
 ./scripts/prepare_rom.sh /data/data/com.termux/files/home/rootfs
@@ -201,7 +201,7 @@ PS. Please use ndk v22 or lower, otherwise it may fail.
 #### Integrating rootfs
 
 Currently you cannot build the ROM yourself, instead you can use the prebuilt ROM.
-To do that, extract rootfs.7z from the official release apk and copy it to `app/src/main/assets`.
+To do that, extract rootfs.tar.gz from the official release apk and copy it to `app/src/main/assets`.
 
 ### Build the app with Android Studio
 
