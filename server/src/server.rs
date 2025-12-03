@@ -97,13 +97,6 @@ pub fn run_server_cli(args: &[String]) -> Result<(), String> {
 
 /// Run the server with parsed arguments
 fn run_server_with_args(args: Args) -> Result<(), String> {
-    // Determine verbosity level
-    let (log_level, verbose_output) = match args.verbose.as_str() {
-        "none" => ("warn", false),
-        "vv" => ("debug", true),
-        _ => ("info", true), // "v" or default
-    };
-
     info!("libtwoyi server starting...");
     info!("Profile: {}", args.profile);
     info!("Rootfs: {:?}", args.rootfs);

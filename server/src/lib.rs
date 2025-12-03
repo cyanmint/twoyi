@@ -10,12 +10,9 @@
 
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
-use jni::sys::{jint, jlong, jboolean, JNI_TRUE, JNI_FALSE};
-use log::{info, error, debug, warn};
-use std::ffi::CString;
-use std::path::PathBuf;
+use jni::sys::{jint, jboolean, JNI_TRUE, JNI_FALSE};
+use log::{info, error, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::thread;
 
 mod input;
@@ -25,7 +22,7 @@ mod rom_patcher;
 mod server;
 
 // Re-export server module for standalone execution
-pub use server::run_server;
+pub use server::run_server_cli;
 
 /// Static flag to track if the server is running
 static SERVER_RUNNING: AtomicBool = AtomicBool::new(false);

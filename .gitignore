@@ -14,3 +14,5 @@
 .cxx
 local.properties
 dl.sh
+# libtwoyi.so is built from Rust source during CI
+app/src/main/jniLibs/arm64-v8a/libtwoyi.so
