@@ -289,7 +289,7 @@ fn run_server_internal(
     if legacy_mode {
         // Legacy mode: for standalone server, we can't use libOpenglRender.so
         // because it requires Android's native window system.
-        // The container will start but graphics must be accessed via other means.
+        // Graphics can only be accessed via scrcpy by running without -L flag.
         warn!("=== LEGACY MODE WARNING ===");
         warn!("Legacy mode is designed for in-app use with libOpenglRender.so.");
         warn!("In standalone server mode, the container will start but the OpenGL renderer");
@@ -297,9 +297,6 @@ fn run_server_internal(
         warn!("Consider using the normal mode (without -L flag) with scrcpy for display.");
         warn!("===========================");
         gralloc = None;
-        
-        // Note: We don't start the OpenGL renderer in standalone mode
-        // because it requires an Android native window which isn't available.
     } else {
         // Normal mode: use fake gralloc
         let g = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, width, height));
