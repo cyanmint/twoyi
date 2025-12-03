@@ -86,7 +86,7 @@ PS. 请安装 ndk 22 或者更低版本，高版本可能无法编译成功。
 
 两仪的 ROM 正在开源中，目前还无法从源码编译；不过可以使用预编译的 ROM。
 
-可以从官方发布的 APK 包里面提取 `rootfs.7z` 然后放置到本项目的 `app/src/main/assets` 目录下。
+可以从官方发布的 APK 包里面提取 `rootfs.tar.gz` 然后放置到本项目的 `app/src/main/assets` 目录下。
 
 ### 使用 Android Studio 编译
 
