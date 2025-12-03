@@ -669,15 +669,17 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
         cmd.env("TYLOADER", loader_str);
     }
 
-    cmd.env("REDROID_WIDTH", width.to_string());
-    cmd.env("REDROID_HEIGHT", height.to_string());
-    cmd.env("REDROID_DPI", dpi.to_string());
-    cmd.env("REDROID_ADB_ENABLED", "1");
-
     if legacy_mode {
-        info!("Legacy mode: using OpenGL renderer environment");
-        // Legacy mode doesn't need fake gralloc environment
+        info!("Legacy mode: using OpenGL renderer environment (minimal env vars)");
+        // In legacy mode, only set TYLOADER (already done above) to match original JNI behavior
+        // The original JNI code doesn't set any REDROID_* or GRALLOC variables
     } else {
+        // Non-legacy mode: set REDROID variables for scrcpy/fake gralloc mode
+        cmd.env("REDROID_WIDTH", width.to_string());
+        cmd.env("REDROID_HEIGHT", height.to_string());
+        cmd.env("REDROID_DPI", dpi.to_string());
+        cmd.env("REDROID_ADB_ENABLED", "1");
+        
         info!("Setting up fake gralloc environment");
         for (key, value) in gralloc::get_gralloc_env_vars() {
             cmd.env(key, value);
