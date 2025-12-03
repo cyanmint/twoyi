@@ -18,7 +18,6 @@ use crate::input;
 use crate::framebuffer;
 use crate::gralloc;
 use crate::rom_patcher;
-use crate::renderer;
 
 /// Default ADB address for scrcpy connections (binds to all interfaces)
 const DEFAULT_ADB_ADDRESS: &str = "0.0.0.0:5556";
@@ -84,7 +83,9 @@ struct Args {
     #[arg(short = 'p', long, default_value = "default")]
     profile: String,
 
-    /// Legacy mode - use libOpenglRender.so for graphics instead of fake gralloc + scrcpy
+    /// Legacy mode - use libOpenglRender.so for graphics instead of fake gralloc + scrcpy.
+    /// NOTE: This mode is designed for in-app use only. In standalone server mode,
+    /// the container will start but graphics rendering is not available.
     #[arg(short = 'L', long)]
     legacy: bool,
 
@@ -214,7 +215,7 @@ fn run_server_internal(
     patch_mode: bool,
     profile: &str,
     legacy_mode: bool,
-    fps: i32,
+    _fps: i32, // Currently unused in standalone server mode
 ) -> Result<(), String> {
     let rootfs_str = rootfs.to_string_lossy().to_string();
 
@@ -286,20 +287,19 @@ fn run_server_internal(
     let gralloc: Option<Arc<gralloc::FakeGralloc>>;
     
     if legacy_mode {
-        // Legacy mode: use OpenGL renderer
-        info!("Starting legacy OpenGL renderer...");
+        // Legacy mode: for standalone server, we can't use libOpenglRender.so
+        // because it requires Android's native window system.
+        // The container will start but graphics must be accessed via other means.
+        warn!("=== LEGACY MODE WARNING ===");
+        warn!("Legacy mode is designed for in-app use with libOpenglRender.so.");
+        warn!("In standalone server mode, the container will start but the OpenGL renderer");
+        warn!("is not available. The container's graphics will not be displayed.");
+        warn!("Consider using the normal mode (without -L flag) with scrcpy for display.");
+        warn!("===========================");
         gralloc = None;
         
-        // Start OpenGL renderer in a background thread
-        let width_clone = width;
-        let height_clone = height;
-        let dpi_clone = dpi;
-        let fps_clone = fps;
-        thread::spawn(move || {
-            if let Err(e) = renderer::start_legacy_renderer(width_clone, height_clone, dpi_clone, fps_clone) {
-                error!("Failed to start legacy renderer: {}", e);
-            }
-        });
+        // Note: We don't start the OpenGL renderer in standalone mode
+        // because it requires an Android native window which isn't available.
     } else {
         // Normal mode: use fake gralloc
         let g = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, width, height));
