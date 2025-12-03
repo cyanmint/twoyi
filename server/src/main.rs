@@ -3,13 +3,12 @@
 
 //! Standalone twoyi server binary
 //! Execute directly: ./twoyi-server --help
+//!
+//! This binary shares the same code as the JNI library (libtwoyi.so) but runs
+//! as a standalone CLI application instead of being called from Java.
 
-mod input;
-mod framebuffer;
-mod gralloc;
-mod rom_patcher;
-mod server;
-mod renderer;
+// Import from the library crate
+use twoyi::server;
 
 use log::{info, error};
 
