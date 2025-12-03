@@ -77,17 +77,20 @@ jobs:
 
     - name: Setup Rust linker for Android
       run: |
-        mkdir -p server/.cargo
-        echo '[target.aarch64-linux-android]' > server/.cargo/config.toml
-        echo "linker = \"$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android27-clang\"" >> server/.cargo/config.toml
+        mkdir -p app/rs/.cargo
+        echo '[target.aarch64-linux-android]' > app/rs/.cargo/config.toml
+        echo "linker = \"$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android27-clang\"" >> app/rs/.cargo/config.toml
 
-    - name: Build twoyi-server for Android
+    - name: Build twoyi for Android
       run: |
-        cd server
+        cd app/rs
         cargo build --release --target aarch64-linux-android
+        # Copy libtwoyi.so to jniLibs (JNI library for app)
+        mkdir -p ../src/main/jniLibs/arm64-v8a
+        cp target/aarch64-linux-android/release/libtwoyi.so ../src/main/jniLibs/arm64-v8a/libtwoyi.so
         # Copy twoyi-server to assets (standalone executable for app to execute)
-        mkdir -p ../app/src/main/assets
-        cp target/aarch64-linux-android/release/twoyi-server ../app/src/main/assets/twoyi-server
+        mkdir -p ../src/main/assets
+        cp target/aarch64-linux-android/release/twoyi-server ../src/main/assets/twoyi-server
       env:
         ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
 

@@ -1,4 +1,4 @@
-# Threetwi Server (Unified Twoyi Project)
+# Twoyi Rust Project (Unified JNI + Server)
 
 This is the unified Rust project for Threetwi, a fork of [twoyi](https://github.com/twoyi/twoyi).
 
@@ -16,8 +16,9 @@ The code is shared between both targets, with conditional compilation for Androi
 
 ### Version 3.5.8 - Unified Codebase
 
-#### Merged app/rs and server directories
+#### Merged code into app/rs
 - Single Rust project that builds both JNI library and standalone server
+- Removed separate `server/` directory - all code now in `app/rs/`
 - Shared input system, gralloc emulation, and server code
 - Conditional compilation separates Android-specific JNI code
 - Legacy mode support with `-L` flag for OpenGL rendering
@@ -109,10 +110,10 @@ twoyi-server -r /data/ty1 -P
 ## Building
 
 ```bash
-cd server
+cd app/rs
 
 # Build for Android (creates both libtwoyi.so and twoyi-server)
-./build_android.sh
+./build_rs.sh --release
 
 # Build for local testing (Linux x86_64)
 cargo build --release

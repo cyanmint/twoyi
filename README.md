@@ -84,13 +84,17 @@ Threetwi (based on Twoyi) is a lightweight Android container. It runs a nearly c
 
 The following files were created by AI (GitHub Copilot) and are NOT APPLICABLE for copyright:
 
-**Server:**
-- `server/src/main.rs` - Main server binary
-- `server/src/framebuffer.rs` - Framebuffer streaming
-- `server/src/gralloc.rs` - Fake gralloc device
-- `server/src/input.rs` - Input handling
-- `server/Cargo.toml` - Rust dependencies
-- `server/build_android.sh` - Build script
+**Rust (app/rs):**
+- `app/rs/src/lib.rs` - JNI library entry point
+- `app/rs/src/main.rs` - Standalone server binary
+- `app/rs/src/server.rs` - Server logic
+- `app/rs/src/framebuffer.rs` - Framebuffer streaming
+- `app/rs/src/gralloc.rs` - Fake gralloc device
+- `app/rs/src/input.rs` - Input handling
+- `app/rs/src/renderer.rs` - OpenGL renderer wrapper
+- `app/rs/src/rom_patcher.rs` - ROM binary patching
+- `app/rs/Cargo.toml` - Rust dependencies
+- `app/rs/build_rs.sh` - Build script
 
 **App - Activities:**
 - `app/src/main/java/io/twoyi/RemoteRenderActivity.java` - Remote rendering

@@ -58,9 +58,9 @@ android {
 task cargoBuild {
     doLast {
         exec {
-            // Build the merged twoyi project from server directory
-            workingDir new File(project.projectDir.parentFile, "server")
-            commandLine "sh", "build_android.sh", "--release"
+            // Build the unified twoyi project (JNI lib + standalone server)
+            workingDir new File(project.projectDir, "rs")
+            commandLine "sh", "build_rs.sh", "--release"
         }
     }
 }

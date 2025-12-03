@@ -2,29 +2,45 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+//! Unified twoyi library that works as both:
+//! - A JNI library (cdylib) for Android app use
+//! - A standalone server (via twoyi-server binary)
+
+#[cfg(target_os = "android")]
 use jni::objects::JValue;
+#[cfg(target_os = "android")]
 use jni::sys::{jclass, jfloat, jint, jobject, JNI_ERR, jstring};
+#[cfg(target_os = "android")]
 use jni::JNIEnv;
+#[cfg(target_os = "android")]
 use jni::{JavaVM, NativeMethod};
-use log::{error, info, Level, debug};
-use ndk_sys;
+#[cfg(target_os = "android")]
+use log::{error, info, debug, Level};
+#[cfg(target_os = "android")]
 use std::ffi::c_void;
-
+#[cfg(target_os = "android")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "android")]
 use std::thread;
-
-use android_logger::Config;
-
+#[cfg(target_os = "android")]
 use std::fs::File;
+#[cfg(target_os = "android")]
 use std::process::{Command, Stdio};
 
-mod input;
-mod renderer_bindings;
+// Shared modules (used by both JNI and server)
+pub mod input;
+pub mod framebuffer;
+pub mod gralloc;
+pub mod rom_patcher;
+pub mod server;
+pub mod renderer;
+pub mod renderer_bindings;
 
-/// ## Examples
-/// ```
-/// let method:NativeMethod = jni_method!(native_method, "(Ljava/lang/String;)V");
-/// ```
+// ============================================================================
+// JNI-specific code (Android only)
+// ============================================================================
+
+#[cfg(target_os = "android")]
 macro_rules! jni_method {
     ( $name: tt, $method:tt, $signature:expr ) => {{
         jni::NativeMethod {
@@ -35,7 +51,10 @@ macro_rules! jni_method {
     }};
 }
 
+#[cfg(target_os = "android")]
 static RENDERER_STARTED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub fn renderer_init(
     env: JNIEnv,
@@ -119,6 +138,7 @@ pub fn renderer_init(
     }
 }
 
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub fn renderer_reset_window(
     env: JNIEnv,
@@ -136,6 +156,7 @@ pub fn renderer_reset_window(
     }
 }
 
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub fn renderer_remove_window(env: JNIEnv, _clz: jclass, surface: jobject) {
     debug!("renderer_remove_window");
@@ -146,6 +167,7 @@ pub fn renderer_remove_window(env: JNIEnv, _clz: jclass, surface: jobject) {
     }
 }
 
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub fn handle_touch(env: JNIEnv, _clz: jclass, event: jobject) {
     // TODO: cache the field id.
@@ -158,15 +180,44 @@ pub fn handle_touch(env: JNIEnv, _clz: jclass, event: jobject) {
                 .unwrap();
             ndk::event::MotionEvent::from_ptr(nonptr)
         };
-        input::handle_touch(ev)
+        handle_touch_from_motion_event(ev)
     }
 }
 
+/// Handle touch from Android MotionEvent (JNI path)
+#[cfg(target_os = "android")]
+fn handle_touch_from_motion_event(ev: ndk::event::MotionEvent) {
+    use ndk::event::MotionAction;
+    
+    let action = ev.action();
+    let pointer_index = ev.pointer_index();
+    let pointer = ev.pointer_at_index(pointer_index);
+    let pointer_id = pointer.pointer_id();
+    let pressure = pointer.pressure();
+    let x = pointer.x();
+    let y = pointer.y();
+
+    // Convert MotionAction to our action codes
+    let action_code = match action {
+        MotionAction::Down => 0,
+        MotionAction::Up => 1,
+        MotionAction::Move => 2,
+        MotionAction::Cancel => 3,
+        MotionAction::PointerDown => 5,
+        MotionAction::PointerUp => 6,
+        _ => return,
+    };
+
+    input::handle_touch_event(action_code, pointer_id, x, y, pressure);
+}
+
+#[cfg(target_os = "android")]
 pub fn send_key_code(_env: JNIEnv, _clz: jclass, keycode: jint) {
     debug!("send key code!");
     input::send_key_code(keycode);
 }
 
+#[cfg(target_os = "android")]
 unsafe fn register_natives(jvm: &JavaVM, class_name: &str, methods: &[NativeMethod]) -> jint {
     let env: JNIEnv = jvm.get_env().unwrap();
     let jni_version = env.get_version().unwrap();
@@ -194,11 +245,12 @@ unsafe fn register_natives(jvm: &JavaVM, class_name: &str, methods: &[NativeMeth
     }
 }
 
+#[cfg(target_os = "android")]
 #[no_mangle]
 #[allow(non_snake_case)]
 unsafe fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
     android_logger::init_once(
-        Config::default()
+        android_logger::Config::default()
             .with_min_level(Level::Info)
             .with_tag("CLIENT_EGL"),
     );
