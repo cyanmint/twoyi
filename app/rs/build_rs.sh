@@ -19,7 +19,7 @@ fi
 # Determine the build profile from arguments
 BUILD_PROFILE="debug"
 for arg in "$@"; do
-    if [ "$arg" == "--release" ]; then
+    if [ "$arg" = "--release" ]; then
         BUILD_PROFILE="release"
         break
     fi
