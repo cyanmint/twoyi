@@ -1,2 +1,5 @@
 [target.aarch64-linux-android]
 linker = "aarch64-linux-android27-clang"
+# Link against static libraries where possible
+# Note: libc is still dynamically linked on Android
+rustflags = ["-C", "link-arg=-static-libstdc++", "-C", "link-arg=-static-libgcc"]

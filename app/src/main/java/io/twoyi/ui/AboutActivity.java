@@ -27,7 +27,6 @@ import de.psdev.licensesdialog.LicensesDialog;
 import de.psdev.licensesdialog.licenses.ApacheSoftwareLicense20;
 import de.psdev.licensesdialog.licenses.BSD2ClauseLicense;
 import de.psdev.licensesdialog.licenses.GnuGeneralPublicLicense20;
-import de.psdev.licensesdialog.licenses.GnuLesserGeneralPublicLicense3;
 import de.psdev.licensesdialog.licenses.MITLicense;
 import de.psdev.licensesdialog.model.Notice;
 import de.psdev.licensesdialog.model.Notices;
@@ -224,8 +223,6 @@ public class AboutActivity extends AppCompatActivity {
         Element license = new Element();
         license.setTitle(getResources().getString(R.string.about_btn));
         Notices notices = new Notices();
-        notices.addNotice(new Notice("AndroidP7Zip", "https://github.com/hzy3774/AndroidP7zip",
-                "7-Zip Copyright (C) 1999-2020 Igor Pavlov.",new GnuLesserGeneralPublicLicense3()));
         notices.addNotice(new Notice("termux-adb-fastboot", "https://github.com/rendiix/termux-adb-fastboot",
                 "Copyright (c) 2022 rendiix", new ApacheSoftwareLicense20()));
         notices.addNotice(new Notice("libsu", "https://github.com/topjohnwu/libsu", "topjohnwu", new ApacheSoftwareLicense20()));
