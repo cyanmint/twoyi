@@ -41,10 +41,12 @@ public class AppKV {
     public static final String DEFAULT_ADB_ADDRESS = "127.0.0.1:5556";
 
     // Display mode: "scrcpy" or "legacy"
-    // TODO: These constants are reserved for future use to configure display mode in the application.
     public static final String DISPLAY_MODE = "display_mode";
     public static final String DISPLAY_MODE_SCRCPY = "scrcpy";
     public static final String DISPLAY_MODE_LEGACY = "legacy";
+
+    // Legacy mode toggle (uses OpenGL renderer instead of fake gralloc + scrcpy)
+    public static final String LEGACY_MODE = "legacy_mode";
 
     // Verbose debug logging
     public static final String VERBOSE_DEBUG = "verbose_debug";

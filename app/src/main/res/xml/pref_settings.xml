@@ -90,6 +90,12 @@
 
     <PreferenceCategory android:title="@string/settings_category_debug">
         <CheckBoxPreference
+            android:key="legacy_mode"
+            android:defaultValue="false"
+            android:summary="@string/settings_legacy_mode_summary"
+            android:title="@string/settings_legacy_mode_title" />
+
+        <CheckBoxPreference
             android:key="verbose_debug"
             android:defaultValue="false"
             android:summary="@string/settings_verbose_debug_summary"

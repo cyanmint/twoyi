@@ -135,6 +135,8 @@
 
     <!-- Debug settings -->
     <string name="settings_category_debug">Debug</string>
+    <string name="settings_legacy_mode_title">Legacy Mode</string>
+    <string name="settings_legacy_mode_summary">Use OpenGL renderer (libOpenglRender.so) instead of fake gralloc + scrcpy</string>
     <string name="settings_verbose_debug_title">Verbose Debug Logging</string>
     <string name="settings_verbose_debug_summary">Enable extra verbose logging for debugging container issues</string>
 

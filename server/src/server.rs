@@ -18,6 +18,7 @@ use crate::input;
 use crate::framebuffer;
 use crate::gralloc;
 use crate::rom_patcher;
+use crate::renderer;
 
 /// Default ADB address for scrcpy connections (binds to all interfaces)
 const DEFAULT_ADB_ADDRESS: &str = "0.0.0.0:5556";
@@ -32,7 +33,12 @@ The container uses a headless redroid-based ROM that works with scrcpy for displ
 Graphics are rendered via scrcpy which connects to the container's ADB daemon.
 Use 'scrcpy -s <adb_address>' to connect and view the display.
 
-The server also accepts control connections for configuration and monitoring."#, long_about = None)]
+The server also accepts control connections for configuration and monitoring.
+
+LEGACY MODE (--legacy):
+When enabled, uses the original libOpenglRender.so for graphics rendering
+instead of the fake gralloc + scrcpy approach. This provides compatibility
+with the original twoyi app behavior."#, long_about = None)]
 struct Args {
     /// Path to the rootfs directory
     #[arg(short = 'r', long)]
@@ -77,6 +83,14 @@ struct Args {
     /// Profile name for identification (used for managing multiple containers)
     #[arg(short = 'p', long, default_value = "default")]
     profile: String,
+
+    /// Legacy mode - use libOpenglRender.so for graphics instead of fake gralloc + scrcpy
+    #[arg(short = 'L', long)]
+    legacy: bool,
+
+    /// Frames per second for legacy OpenGL renderer (only used with --legacy)
+    #[arg(short = 'f', long, default_value_t = 60)]
+    fps: i32,
 }
 
 /// Run the server with command line arguments (for standalone execution)
@@ -93,9 +107,22 @@ fn run_server_with_args(args: Args) -> Result<(), String> {
     info!("Profile: {}", args.profile);
     info!("Rootfs: {:?}", args.rootfs);
     info!("Control address: {}", args.bind);
-    info!("ADB address for scrcpy: {}", args.adb_address);
     info!("Screen size: {}x{} @ {}dpi", args.width, args.height, args.dpi);
     info!("Verbose level: {}", args.verbose);
+    
+    if args.legacy {
+        info!("=== LEGACY MODE ===");
+        info!("Using OpenGL renderer (libOpenglRender.so) for graphics");
+        info!("FPS: {}", args.fps);
+        info!("===================");
+    } else {
+        info!("ADB address for scrcpy: {}", args.adb_address);
+        info!("Fake gralloc: enabled (capturing graphics from legacy ROMs)");
+        info!("=== SCRCPY DISPLAY ===");
+        info!("This server uses scrcpy for display via the container's ADB.");
+        info!("Connect with: scrcpy -s {}", args.adb_address);
+        info!("======================");
+    }
     
     if args.setup {
         info!("Setup mode: enabled (container will NOT be started automatically)");
@@ -103,16 +130,9 @@ fn run_server_with_args(args: Args) -> Result<(), String> {
     if args.patch {
         info!("Patch mode: enabled (ROM init binary will be patched for custom paths)");
     }
-    info!("Fake gralloc: enabled (capturing graphics from legacy ROMs)");
     if let Some(ref loader) = args.loader {
         info!("Loader: {:?}", loader);
     }
-
-    // Print scrcpy connection info
-    info!("=== SCRCPY DISPLAY ===");
-    info!("This server uses scrcpy for display via the container's ADB.");
-    info!("Connect with: scrcpy -s {}", args.adb_address);
-    info!("======================");
 
     // Validate rootfs exists
     if !args.rootfs.exists() {
@@ -144,6 +164,8 @@ fn run_server_with_args(args: Args) -> Result<(), String> {
         args.setup,
         args.patch,
         &args.profile,
+        args.legacy,
+        args.fps,
     )
 }
 
@@ -174,6 +196,8 @@ pub fn run_server_with_config(
         setup_mode,
         patch_mode,
         profile,
+        false, // legacy_mode
+        60,    // fps
     )
 }
 
@@ -189,6 +213,8 @@ fn run_server_internal(
     setup_mode: bool,
     patch_mode: bool,
     profile: &str,
+    legacy_mode: bool,
+    fps: i32,
 ) -> Result<(), String> {
     let rootfs_str = rootfs.to_string_lossy().to_string();
 
@@ -256,17 +282,40 @@ fn run_server_internal(
     // Set up the rootfs environment
     setup_rootfs_environment(rootfs);
 
-    // Start fake gralloc
-    let gralloc = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, width, height));
-    gralloc.start();
-    info!("Fake gralloc device started - capturing graphics data");
+    // Start graphics subsystem based on mode
+    let gralloc: Option<Arc<gralloc::FakeGralloc>>;
+    
+    if legacy_mode {
+        // Legacy mode: use OpenGL renderer
+        info!("Starting legacy OpenGL renderer...");
+        gralloc = None;
+        
+        // Start OpenGL renderer in a background thread
+        let width_clone = width;
+        let height_clone = height;
+        let dpi_clone = dpi;
+        let fps_clone = fps;
+        thread::spawn(move || {
+            if let Err(e) = renderer::start_legacy_renderer(width_clone, height_clone, dpi_clone, fps_clone) {
+                error!("Failed to start legacy renderer: {}", e);
+            }
+        });
+    } else {
+        // Normal mode: use fake gralloc
+        let g = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, width, height));
+        g.start();
+        info!("Fake gralloc device started - capturing graphics data");
+        gralloc = Some(g);
+    }
 
-    // Start ADB forwarder
-    let adb_address_clone = adb_address.to_string();
-    let rootfs_for_adb = rootfs.clone();
-    thread::spawn(move || {
-        start_adb_forwarder(&adb_address_clone, &rootfs_for_adb);
-    });
+    // Start ADB forwarder (only in non-legacy mode)
+    if !legacy_mode {
+        let adb_address_clone = adb_address.to_string();
+        let rootfs_for_adb = rootfs.clone();
+        thread::spawn(move || {
+            start_adb_forwarder(&adb_address_clone, &rootfs_for_adb);
+        });
+    }
 
     // Start container process (unless in setup mode)
     let container_running = Arc::new(AtomicBool::new(true));
@@ -275,8 +324,9 @@ fn run_server_internal(
         let container_running_clone = container_running.clone();
         let rootfs_clone = rootfs.clone();
         let loader_clone = loader.cloned();
+        let legacy_mode_clone = legacy_mode;
         thread::spawn(move || {
-            start_container(&rootfs_clone, loader_clone.as_ref(), true, width, height, dpi);
+            start_container(&rootfs_clone, loader_clone.as_ref(), true, width, height, dpi, legacy_mode_clone);
             container_running_clone.store(false, Ordering::SeqCst);
         });
     } else {
@@ -290,16 +340,22 @@ fn run_server_internal(
 
     info!("Control server listening on {}", bind);
 
-    // Start framebuffer streamer
-    let fb_source = format!("{}/dev/shm/gralloc_fb", rootfs.to_string_lossy());
-    let frame_streamer = Arc::new(framebuffer::FrameStreamer::new_with_path(width, height, &fb_source));
-    frame_streamer.start();
+    // Start framebuffer streamer (only in non-legacy mode)
+    let frame_streamer = if !legacy_mode {
+        let fb_source = format!("{}/dev/shm/gralloc_fb", rootfs.to_string_lossy());
+        let streamer = Arc::new(framebuffer::FrameStreamer::new_with_path(width, height, &fb_source));
+        streamer.start();
+        Some(streamer)
+    } else {
+        None
+    };
 
     // Keep gralloc instance alive
     let _gralloc = gralloc;
 
     let adb_address_for_clients = adb_address.to_string();
     let profile_name = profile.to_string();
+    let legacy_mode_for_client = legacy_mode;
     
     for stream in listener.incoming() {
         match stream {
@@ -309,7 +365,7 @@ fn run_server_internal(
                 let adb_addr = adb_address_for_clients.clone();
                 let profile = profile_name.clone();
                 thread::spawn(move || {
-                    handle_client(stream, width, height, &rootfs_clone, setup_mode, streamer, &adb_addr, &profile);
+                    handle_client(stream, width, height, &rootfs_clone, setup_mode, streamer, &adb_addr, &profile, legacy_mode_for_client);
                 });
             }
             Err(e) => {
@@ -579,7 +635,7 @@ fn spawn_stream_reader<R: Read + Send + 'static>(
     })
 }
 
-fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, width: i32, height: i32, dpi: i32) {
+fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, width: i32, height: i32, dpi: i32, legacy_mode: bool) {
     let working_dir = rootfs.to_string_lossy().to_string();
     let log_path = rootfs.parent()
         .map(|p| p.join("log.txt"))
@@ -618,11 +674,16 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
     cmd.env("REDROID_DPI", dpi.to_string());
     cmd.env("REDROID_ADB_ENABLED", "1");
 
-    info!("Setting up fake gralloc environment");
-    for (key, value) in gralloc::get_gralloc_env_vars() {
-        cmd.env(key, value);
+    if legacy_mode {
+        info!("Legacy mode: using OpenGL renderer environment");
+        // Legacy mode doesn't need fake gralloc environment
+    } else {
+        info!("Setting up fake gralloc environment");
+        for (key, value) in gralloc::get_gralloc_env_vars() {
+            cmd.env(key, value);
+        }
+        cmd.env("GRALLOC_SHM_PATH", format!("{}/dev/shm/gralloc_fb", working_dir));
     }
-    cmd.env("GRALLOC_SHM_PATH", format!("{}/dev/shm/gralloc_fb", working_dir));
 
     if verbose {
         cmd.stdout(Stdio::piped());
@@ -697,11 +758,12 @@ fn start_container(rootfs: &PathBuf, loader: Option<&PathBuf>, verbose: bool, wi
     }
 }
 
-fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Arc<framebuffer::FrameStreamer>, adb_address: &str, profile_name: &str) {
+fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBuf, setup_mode: bool, frame_streamer: Option<Arc<framebuffer::FrameStreamer>>, adb_address: &str, profile_name: &str, legacy_mode: bool) {
     let peer_addr = stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
     info!("Client connected from {}", peer_addr);
 
     let status = if setup_mode { "setup" } else { "running" };
+    let display_mode = if legacy_mode { "legacy_opengl" } else { "fake_gralloc" };
     
     let default_rootfs = "/data/data/io.twoyi/rootfs";
     let opengles_path = format!("{}/opengles", default_rootfs);
@@ -714,10 +776,11 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
         "rootfs": rootfs.to_string_lossy(),
         "status": status,
         "setup_mode": setup_mode,
-        "streaming": true,
+        "streaming": !legacy_mode,
         "adb_address": adb_address,
-        "display_mode": "fake_gralloc",
-        "fake_gralloc": true,
+        "display_mode": display_mode,
+        "legacy_mode": legacy_mode,
+        "fake_gralloc": !legacy_mode,
         "profile": profile_name,
         "sockets": {
             "opengles": opengles_path,
@@ -735,8 +798,11 @@ fn handle_client(mut stream: TcpStream, width: i32, height: i32, rootfs: &PathBu
         let _ = stream.write_all(format!("{}\n", info_str).as_bytes());
     }
 
-    if let Ok(fb_stream) = stream.try_clone() {
-        frame_streamer.add_client(fb_stream);
+    // Only add client to frame streamer in non-legacy mode
+    if let Some(ref streamer) = frame_streamer {
+        if let Ok(fb_stream) = stream.try_clone() {
+            streamer.add_client(fb_stream);
+        }
     }
 
     let mut reader = match stream.try_clone() {

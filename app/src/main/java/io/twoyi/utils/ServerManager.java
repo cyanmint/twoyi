@@ -171,6 +171,9 @@ public class ServerManager {
                 profile.isVerboseDebug() : 
                 AppKV.getBooleanConfig(context, AppKV.VERBOSE_DEBUG, false);
 
+        // Check if legacy mode is enabled
+        boolean legacyMode = AppKV.getBooleanConfig(context, AppKV.LEGACY_MODE, false);
+
         // Get profile name
         String profileName = profile != null ? profile.getName() : "default";
 
@@ -189,6 +192,12 @@ public class ServerManager {
         command.add(loaderPath);
         command.add("--profile");
         command.add(profileName);
+        
+        if (legacyMode) {
+            command.add("-L");
+            Log.i(TAG, "Legacy mode enabled");
+            notifyOutputListeners("Legacy mode enabled (using OpenGL renderer)");
+        }
         
         if (verboseDebug) {
             command.add("--verbose");

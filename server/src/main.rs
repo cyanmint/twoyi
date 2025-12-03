@@ -9,6 +9,7 @@ mod framebuffer;
 mod gralloc;
 mod rom_patcher;
 mod server;
+mod renderer;
 
 use log::{info, error};
 
