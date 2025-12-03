@@ -6,13 +6,18 @@
 package io.twoyi.utils;
 
 import android.content.Context;
-import android.content.pm.ApplicationInfo;
+import android.content.res.AssetManager;
 import android.util.Log;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.ArrayList;
@@ -20,13 +25,13 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Manages the twoyi server binary and connections
+ * Manages the twoyi server binary and connections.
+ * The server binary (twoyi-server) is extracted from assets and executed as a standalone process.
  */
 public class ServerManager {
     private static final String TAG = "ServerManager";
-    // The server binary is now a standalone executable named libtwoyi.so
-    // It's placed in jniLibs so Android automatically extracts it to nativeLibraryDir
-    private static final String SERVER_BINARY_NAME = "libtwoyi.so";
+    // The server binary is a standalone executable stored in assets
+    private static final String SERVER_BINARY_NAME = "twoyi-server";
 
     private static Process serverProcess;
     private static final List<ServerOutputListener> outputListeners = new ArrayList<>();
@@ -99,23 +104,28 @@ public class ServerManager {
     }
 
     /**
-     * Get the server binary path from the native library directory.
-     * The binary is named libtwoyi.so and is automatically extracted by Android
-     * from jniLibs to the app's nativeLibraryDir.
+     * Extract the server binary from assets to the app's files directory
+     * and make it executable.
      */
-    public static File getServerBinary(Context context) throws IOException {
-        ApplicationInfo appInfo = context.getApplicationInfo();
-        File serverBinary = new File(appInfo.nativeLibraryDir, SERVER_BINARY_NAME);
+    public static File extractServerBinary(Context context) throws IOException {
+        File serverBinary = new File(context.getFilesDir(), SERVER_BINARY_NAME);
         
-        if (!serverBinary.exists()) {
-            throw new IOException("Server binary not found at: " + serverBinary.getAbsolutePath());
+        AssetManager assets = context.getAssets();
+        try (InputStream in = new BufferedInputStream(assets.open(SERVER_BINARY_NAME));
+             OutputStream out = new BufferedOutputStream(new FileOutputStream(serverBinary))) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = in.read(buffer)) > 0) {
+                out.write(buffer, 0, count);
+            }
         }
         
-        if (!serverBinary.canExecute()) {
-            throw new IOException("Server binary is not executable: " + serverBinary.getAbsolutePath());
+        // Make executable
+        if (!serverBinary.setExecutable(true)) {
+            throw new IOException("Failed to make server binary executable");
         }
         
-        Log.i(TAG, "Server binary path: " + serverBinary.getAbsolutePath());
+        Log.i(TAG, "Server binary extracted to: " + serverBinary.getAbsolutePath());
         return serverBinary;
     }
 
@@ -138,8 +148,8 @@ public class ServerManager {
         // Clear previous log
         clearServerLog();
 
-        // Get server binary from native library directory
-        File serverBinary = getServerBinary(context);
+        // Extract server binary from assets
+        File serverBinary = extractServerBinary(context);
         
         // Get rootfs path from profile or default
         ProfileManager profileManager = ProfileManager.getInstance(context);

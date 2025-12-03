@@ -23,12 +23,9 @@ use crate::rom_patcher;
 /// Default ADB address for scrcpy connections (binds to all interfaces)
 const DEFAULT_ADB_ADDRESS: &str = "0.0.0.0:5556";
 
-/// Default binary name for help messages
-const DEFAULT_BINARY_NAME: &str = "libtwoyi.so";
-
 #[derive(Parser, Debug)]
-#[command(name = "libtwoyi")]
-#[command(about = r#"twoyi container server (libtwoyi.so)
+#[command(name = "twoyi-server")]
+#[command(about = r#"twoyi container server
 
 This server runs the Android container and exposes the ADB address for scrcpy connections.
 The container uses a headless redroid-based ROM that works with scrcpy for display.
@@ -36,11 +33,7 @@ The container uses a headless redroid-based ROM that works with scrcpy for displ
 Graphics are rendered via scrcpy which connects to the container's ADB daemon.
 Use 'scrcpy -s <adb_address>' to connect and view the display.
 
-The server also accepts control connections for configuration and monitoring.
-
-This library works both as:
-- A JNI library (load via System.loadLibrary("twoyi"))
-- A standalone executable (run ./libtwoyi.so directly)"#, long_about = None)]
+The server also accepts control connections for configuration and monitoring."#, long_about = None)]
 struct Args {
     /// Path to the rootfs directory
     #[arg(short = 'r', long)]
