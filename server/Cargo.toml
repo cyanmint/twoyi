@@ -2,26 +2,22 @@
 # This is part of the threetwi project, a fork of twoyi (https://github.com/twoyi/twoyi).
 
 [package]
-name = "twoyi-server"
+name = "twoyi"
 version = "0.1.0"
 edition = "2021"
 
-# Build as both library (cdylib for JNI) and binary (for Termux/CLI)
+# Build as a single shared library that can also be executed directly
+# When loaded as JNI library: provides JNI functions for Android app
+# When executed directly: ./libtwoyi.so -r rootfs works as CLI
 [lib]
-name = "twoyi_server"
+name = "twoyi"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
-
-[[bin]]
-name = "twoyi-server"
-path = "src/main.rs"
+crate-type = ["cdylib"]
 
 [features]
-default = []
-# Enable JNI support for Android
-jni = ["dep:jni", "dep:android_logger", "dep:ndk", "dep:ndk-sys"]
-# CLI mode (for standalone binary)
-cli = ["dep:clap"]
+default = ["android"]
+# Android build with JNI support (default for the library)
+android = ["jni", "android_logger", "ndk", "ndk-sys"]
 
 [dependencies]
 libc = "0.2.112"
@@ -33,10 +29,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 unix_socket = "0.5.0"
 
-# CLI dependencies (optional, for standalone binary)
-clap = { version = "4.4", features = ["derive"], optional = true }
-
-# JNI dependencies (optional, for Android library)
+# JNI dependencies (for Android library)
 jni = { version = "0.19.0", default-features = false, optional = true }
 android_logger = { version = "0.10", optional = true }
 ndk = { version = "0.6.0", optional = true }

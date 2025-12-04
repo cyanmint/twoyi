@@ -10,9 +10,11 @@ import android.util.Log;
 /**
  * Native server interface for the twoyi container.
  * 
- * This class provides JNI bindings to the Rust twoyi-server library,
- * allowing the container server to run directly in the app process
- * instead of as a separate executable.
+ * This class provides JNI bindings to libtwoyi.so,
+ * allowing the container server to run directly in the app process.
+ * 
+ * The same libtwoyi.so can also be executed directly from Termux:
+ *   ./libtwoyi.so -r $(realpath rootfs)
  */
 public class NativeServer {
     private static final String TAG = "NativeServer";
@@ -20,11 +22,11 @@ public class NativeServer {
 
     static {
         try {
-            System.loadLibrary("twoyi_server");
+            System.loadLibrary("twoyi");
             libraryLoaded = true;
-            Log.i(TAG, "libtwoyi_server.so loaded successfully");
+            Log.i(TAG, "libtwoyi.so loaded successfully");
         } catch (UnsatisfiedLinkError e) {
-            Log.e(TAG, "Failed to load libtwoyi_server.so: " + e.getMessage());
+            Log.e(TAG, "Failed to load libtwoyi.so: " + e.getMessage());
             libraryLoaded = false;
         }
     }
