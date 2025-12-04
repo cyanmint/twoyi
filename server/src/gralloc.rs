@@ -76,6 +76,7 @@ impl FakeGralloc {
     }
 
     /// Get the path to the gralloc socket (for IPC with container)
+    #[allow(dead_code)]
     fn gralloc_socket_path(&self) -> PathBuf {
         self.rootfs_path.join("dev/socket/gralloc")
     }
