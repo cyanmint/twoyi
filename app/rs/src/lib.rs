@@ -2,6 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+//! libtwoyi - twoyi container server library
+//!
+//! This library provides the core functionality for the twoyi container.
+//! It serves a dual purpose:
+//! - As a JNI library called from the Android app (when loaded via System.loadLibrary)
+//! - As a standalone executable (when run directly: ./libtwoyi.so -r rootfs)
+
 use jni::objects::JValue;
 use jni::sys::{jclass, jfloat, jint, jobject, JNI_ERR, jstring};
 use jni::JNIEnv;
@@ -18,8 +25,20 @@ use android_logger::Config;
 use std::fs::File;
 use std::process::{Command, Stdio};
 
+// Original renderer modules
 mod input;
 mod renderer_bindings;
+
+// Server modules
+pub mod framebuffer;
+pub mod gralloc;
+pub mod rom_patcher;
+mod server;
+mod cli;
+mod server_jni;
+
+// Re-export server functionality
+pub use server::{ServerConfig, TwoyiServer};
 
 /// ## Examples
 /// ```
@@ -36,6 +55,7 @@ macro_rules! jni_method {
 }
 
 static RENDERER_STARTED: AtomicBool = AtomicBool::new(false);
+
 #[no_mangle]
 pub fn renderer_init(
     env: JNIEnv,
@@ -222,5 +242,18 @@ unsafe fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
         jni_method!(sendKeycode, send_key_code, "(I)V"),
     ];
 
-    register_natives(&jvm, class_name, jni_methods.as_ref())
+    // Register renderer methods
+    let result = register_natives(&jvm, class_name, jni_methods.as_ref());
+    
+    // Also register server JNI methods
+    server_jni::register_server_natives(&jvm);
+    
+    result
+}
+
+/// Entry point when the library is executed directly (e.g., ./libtwoyi.so -r rootfs)
+/// This is called via the _start symbol or when the linker treats the .so as executable
+#[no_mangle]
+pub extern "C" fn main(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_int {
+    cli::run_cli(argc, argv)
 }

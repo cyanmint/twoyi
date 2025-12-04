@@ -199,6 +199,76 @@ pub fn handle_touch(ev: MotionEvent) {
     }
 }
 
+// Touch actions (matching Android MotionEvent) for use by server
+const ACTION_DOWN: i32 = 0;
+const ACTION_UP: i32 = 1;
+const ACTION_MOVE: i32 = 2;
+const ACTION_CANCEL: i32 = 3;
+const ACTION_POINTER_DOWN: i32 = 5;
+const ACTION_POINTER_UP: i32 = 6;
+
+// Global input tracker for handle_touch_event
+static G_INPUT_MT_SERVER: Lazy<Mutex<[i32;MAX_POINTERS]>> = Lazy::new(|| {std::sync::Mutex::new([0i32;MAX_POINTERS])});
+
+/// Handle touch event from server (action-based instead of MotionEvent-based)
+pub fn handle_touch_event(action: i32, pointer_id: i32, x: f32, y: f32, pressure: f32) {
+    let opt = INPUT_SENDER.lock().unwrap();
+    if let Some(ref fd) = *opt {
+        match action {
+            ACTION_DOWN | ACTION_POINTER_DOWN => {
+                let mut mt = G_INPUT_MT_SERVER.lock().unwrap();
+                mt[pointer_id as usize] = 1;
+
+                input_event_write(fd, EV_ABS, ABS_MT_SLOT, pointer_id);
+                input_event_write(fd, EV_ABS, ABS_MT_TRACKING_ID, pointer_id + 1);
+
+                if pointer_id == 0 {
+                    input_event_write(fd, EV_KEY, BTN_TOUCH, 108);
+                    input_event_write(fd, EV_KEY, BTN_TOOL_FINGER, 108);
+                }
+
+                input_event_write(fd, EV_ABS, ABS_MT_POSITION_X, x as i32);
+                input_event_write(fd, EV_ABS, ABS_MT_POSITION_Y, y as i32);
+                input_event_write(fd, EV_ABS, ABS_MT_PRESSURE, pressure as i32);
+                input_event_write(fd, EV_SYN, SYN_REPORT, SYN_REPORT);
+            }
+            ACTION_UP => {
+                let mut mt = G_INPUT_MT_SERVER.lock().unwrap();
+                for index in 0..MAX_POINTERS {
+                    if mt[index] != 0 {
+                        mt[index] = 0;
+                        input_event_write(fd, EV_ABS, ABS_MT_SLOT, index as i32);
+                        input_event_write(fd, EV_ABS, ABS_MT_TRACKING_ID, -1);
+                        input_event_write(fd, EV_SYN, SYN_REPORT, SYN_REPORT);
+                    }
+                }
+            }
+            ACTION_MOVE => {
+                let mt = G_INPUT_MT_SERVER.lock().unwrap();
+                if mt[pointer_id as usize] != 0 {
+                    input_event_write(fd, EV_ABS, ABS_MT_SLOT, pointer_id);
+                    input_event_write(fd, EV_ABS, ABS_MT_POSITION_X, x as i32);
+                    input_event_write(fd, EV_ABS, ABS_MT_POSITION_Y, y as i32);
+                    input_event_write(fd, EV_ABS, ABS_MT_PRESSURE, pressure as i32);
+                    input_event_write(fd, EV_SYN, SYN_REPORT, SYN_REPORT);
+                }
+            }
+            ACTION_CANCEL | ACTION_POINTER_UP => {
+                let mut mt = G_INPUT_MT_SERVER.lock().unwrap();
+                if mt[pointer_id as usize] == 0 {
+                    return;
+                }
+
+                mt[pointer_id as usize] = 0;
+                input_event_write(fd, EV_ABS, ABS_MT_SLOT, pointer_id);
+                input_event_write(fd, EV_ABS, ABS_MT_TRACKING_ID, -1);
+                input_event_write(fd, EV_SYN, SYN_REPORT, SYN_REPORT);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn generate_touch_device(width: i32, height: i32, touch_path: &str) -> device_info {
     let iid = input_id {
         product: 0x1,

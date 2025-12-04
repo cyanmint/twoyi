@@ -7,15 +7,15 @@
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jint, jboolean, JNI_TRUE, JNI_FALSE};
-use jni::JNIEnv;
-use log::{info, error, Level};
-use android_logger::Config;
+use jni::{JNIEnv, JavaVM, NativeMethod};
+use log::{info, error, debug};
 
 use std::ffi::c_void;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::{ServerConfig, TwoyiServer};
+use crate::input as server_input;
 
 /// Global server instance (lazy initialized)
 static SERVER: once_cell::sync::Lazy<Mutex<Option<Arc<TwoyiServer>>>> = 
@@ -23,22 +23,17 @@ static SERVER: once_cell::sync::Lazy<Mutex<Option<Arc<TwoyiServer>>>> =
 
 /// Initialize the server library (call once from Java)
 #[no_mangle]
-pub extern "C" fn Java_io_twoyi_NativeServer_nativeInit(
+pub extern "C" fn native_server_init(
     _env: JNIEnv,
     _class: JClass,
 ) {
-    android_logger::init_once(
-        Config::default()
-            .with_min_level(Level::Info)
-            .with_tag("TWOYI_SERVER"),
-    );
     info!("twoyi-server JNI library initialized");
 }
 
 /// Start the server with the given configuration
 /// Returns true on success, false on failure
 #[no_mangle]
-pub extern "C" fn Java_io_twoyi_NativeServer_startServer(
+pub extern "C" fn native_start_server(
     env: JNIEnv,
     _class: JClass,
     rootfs: JString,
@@ -129,7 +124,7 @@ pub extern "C" fn Java_io_twoyi_NativeServer_startServer(
 
 /// Stop the server
 #[no_mangle]
-pub extern "C" fn Java_io_twoyi_NativeServer_stopServer(
+pub extern "C" fn native_stop_server(
     _env: JNIEnv,
     _class: JClass,
 ) {
@@ -143,7 +138,7 @@ pub extern "C" fn Java_io_twoyi_NativeServer_stopServer(
 
 /// Check if server is running
 #[no_mangle]
-pub extern "C" fn Java_io_twoyi_NativeServer_isServerRunning(
+pub extern "C" fn native_is_server_running(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -158,7 +153,7 @@ pub extern "C" fn Java_io_twoyi_NativeServer_isServerRunning(
 
 /// Check if container is running
 #[no_mangle]
-pub extern "C" fn Java_io_twoyi_NativeServer_isContainerRunning(
+pub extern "C" fn native_is_container_running(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -173,7 +168,7 @@ pub extern "C" fn Java_io_twoyi_NativeServer_isContainerRunning(
 
 /// Start only the input system (for use with existing renderer)
 #[no_mangle]
-pub extern "C" fn Java_io_twoyi_NativeServer_startInputSystem(
+pub extern "C" fn native_start_input_system(
     env: JNIEnv,
     _class: JClass,
     rootfs: JString,
@@ -189,12 +184,12 @@ pub extern "C" fn Java_io_twoyi_NativeServer_startInputSystem(
     };
 
     info!("Starting input system: {}x{} in {}", width, height, rootfs_str);
-    crate::input::start_input_system(width, height, &rootfs_str);
+    server_input::start_input_system(width, height, &rootfs_str);
 }
 
 /// Handle touch event from Java
 #[no_mangle]
-pub extern "C" fn Java_io_twoyi_NativeServer_handleTouchEvent(
+pub extern "C" fn native_handle_touch_event(
     _env: JNIEnv,
     _class: JClass,
     action: jint,
@@ -208,7 +203,7 @@ pub extern "C" fn Java_io_twoyi_NativeServer_handleTouchEvent(
     let y_clamped = if y < 0 { 0 } else { y };
     let pressure_clamped = if pressure < 0 { 0 } else { pressure };
     
-    crate::input::handle_touch_event(
+    server_input::handle_touch_event(
         action, 
         pointer_id, 
         x_clamped as f32, 
@@ -219,34 +214,79 @@ pub extern "C" fn Java_io_twoyi_NativeServer_handleTouchEvent(
 
 /// Send key event from Java
 #[no_mangle]
-pub extern "C" fn Java_io_twoyi_NativeServer_sendKeyCode(
+pub extern "C" fn native_send_key_code(
     _env: JNIEnv,
     _class: JClass,
     keycode: jint,
 ) {
-    crate::input::send_key_code(keycode);
+    server_input::send_key_code(keycode);
 }
 
-/// JNI_OnLoad - called when the library is loaded
-#[no_mangle]
-#[allow(non_snake_case)]
-pub extern "C" fn JNI_OnLoad(
-    vm: jni::JavaVM,
-    _reserved: *mut c_void,
-) -> jint {
-    let env = match vm.get_env() {
+/// Register server JNI methods with the JVM
+pub fn register_server_natives(jvm: &JavaVM) {
+    let env: JNIEnv = match jvm.get_env() {
         Ok(e) => e,
-        Err(_) => return jni::sys::JNI_ERR,
+        Err(e) => {
+            error!("Failed to get JNI environment: {:?}", e);
+            return;
+        }
     };
 
-    android_logger::init_once(
-        Config::default()
-            .with_min_level(Level::Info)
-            .with_tag("TWOYI_SERVER"),
-    );
+    let class_name = "io/twoyi/NativeServer";
+    let clazz = match env.find_class(class_name) {
+        Ok(clazz) => clazz,
+        Err(_) => {
+            debug!("NativeServer class not found, skipping server JNI registration");
+            return;
+        }
+    };
 
-    info!("twoyi-server JNI library loaded");
+    let methods = [
+        NativeMethod {
+            name: "nativeInit".into(),
+            sig: "()V".into(),
+            fn_ptr: native_server_init as *mut c_void,
+        },
+        NativeMethod {
+            name: "startServer".into(),
+            sig: "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IIILjava/lang/String;)Z".into(),
+            fn_ptr: native_start_server as *mut c_void,
+        },
+        NativeMethod {
+            name: "stopServer".into(),
+            sig: "()V".into(),
+            fn_ptr: native_stop_server as *mut c_void,
+        },
+        NativeMethod {
+            name: "isServerRunning".into(),
+            sig: "()Z".into(),
+            fn_ptr: native_is_server_running as *mut c_void,
+        },
+        NativeMethod {
+            name: "isContainerRunning".into(),
+            sig: "()Z".into(),
+            fn_ptr: native_is_container_running as *mut c_void,
+        },
+        NativeMethod {
+            name: "startInputSystem".into(),
+            sig: "(Ljava/lang/String;II)V".into(),
+            fn_ptr: native_start_input_system as *mut c_void,
+        },
+        NativeMethod {
+            name: "handleTouchEvent".into(),
+            sig: "(IIIII)V".into(),
+            fn_ptr: native_handle_touch_event as *mut c_void,
+        },
+        NativeMethod {
+            name: "sendKeyCode".into(),
+            sig: "(I)V".into(),
+            fn_ptr: native_send_key_code as *mut c_void,
+        },
+    ];
 
-    let version = env.get_version().unwrap();
-    version.into()
+    if let Err(e) = env.register_native_methods(clazz, &methods) {
+        error!("Failed to register server native methods: {:?}", e);
+    } else {
+        debug!("Server native methods registered successfully");
+    }
 }
