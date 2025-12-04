@@ -46,6 +46,12 @@ fn print_usage(program_name: &str) {
 
 /// Parse command line arguments and run the server
 pub fn run_cli(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_int {
+    // Validate arguments
+    if argc < 0 || argv.is_null() {
+        eprintln!("Error: Invalid arguments passed to main");
+        return 1;
+    }
+
     // Convert C arguments to Rust strings
     let args: Vec<String> = (0..argc as usize)
         .filter_map(|i| {
@@ -128,8 +134,9 @@ pub fn run_cli(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_i
             "-W" | "--width" => {
                 i += 1;
                 if i < args.len() {
-                    width = args[i].parse().unwrap_or_else(|_| {
-                        eprintln!("Warning: Invalid width, using default");
+                    let value = &args[i];
+                    width = value.parse().unwrap_or_else(|_| {
+                        eprintln!("Warning: Invalid width '{}', using default 1080", value);
                         1080
                     });
                 } else {
@@ -140,8 +147,9 @@ pub fn run_cli(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_i
             "-H" | "--height" => {
                 i += 1;
                 if i < args.len() {
-                    height = args[i].parse().unwrap_or_else(|_| {
-                        eprintln!("Warning: Invalid height, using default");
+                    let value = &args[i];
+                    height = value.parse().unwrap_or_else(|_| {
+                        eprintln!("Warning: Invalid height '{}', using default 1920", value);
                         1920
                     });
                 } else {
@@ -152,8 +160,9 @@ pub fn run_cli(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_i
             "-d" | "--dpi" => {
                 i += 1;
                 if i < args.len() {
-                    dpi = args[i].parse().unwrap_or_else(|_| {
-                        eprintln!("Warning: Invalid DPI, using default");
+                    let value = &args[i];
+                    dpi = value.parse().unwrap_or_else(|_| {
+                        eprintln!("Warning: Invalid DPI '{}', using default 320", value);
                         320
                     });
                 } else {
