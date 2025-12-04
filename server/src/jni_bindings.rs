@@ -63,7 +63,10 @@ pub extern "C" fn Java_io_twoyi_NativeServer_startServer(
     } else {
         match env.get_string(loader) {
             Ok(s) => Some(s.into()),
-            Err(_) => None,
+            Err(e) => {
+                error!("Failed to get loader string: {:?}", e);
+                None
+            }
         }
     };
 
@@ -200,7 +203,18 @@ pub extern "C" fn Java_io_twoyi_NativeServer_handleTouchEvent(
     y: jint,
     pressure: jint,
 ) {
-    crate::input::handle_touch_event(action, pointer_id, x as f32, y as f32, pressure as f32);
+    // Clamp coordinates to non-negative values since they represent screen positions
+    let x_clamped = if x < 0 { 0 } else { x };
+    let y_clamped = if y < 0 { 0 } else { y };
+    let pressure_clamped = if pressure < 0 { 0 } else { pressure };
+    
+    crate::input::handle_touch_event(
+        action, 
+        pointer_id, 
+        x_clamped as f32, 
+        y_clamped as f32, 
+        pressure_clamped as f32
+    );
 }
 
 /// Send key event from Java

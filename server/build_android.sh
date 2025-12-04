@@ -8,7 +8,7 @@
 #   ./build_android.sh --cli    # Build CLI binary (twoyi-server)
 #   ./build_android.sh --all    # Build both
 
-BUILD_MODE="${1:---lib}"
+BUILD_MODE="${1:-lib}"
 
 # Build library (JNI)
 build_lib() {
@@ -39,21 +39,21 @@ build_cli() {
 }
 
 case "$BUILD_MODE" in
-    --lib)
+    lib|--lib)
         build_lib
         ;;
-    --cli)
+    cli|--cli)
         build_cli
         ;;
-    --all)
+    all|--all)
         build_lib
         build_cli
         ;;
     *)
-        echo "Usage: $0 [--lib|--cli|--all]"
-        echo "  --lib   Build JNI library (default)"
-        echo "  --cli   Build CLI binary"
-        echo "  --all   Build both"
+        echo "Usage: $0 [lib|cli|all]"
+        echo "  lib   Build JNI library (default)"
+        echo "  cli   Build CLI binary"
+        echo "  all   Build both"
         exit 1
         ;;
 esac
