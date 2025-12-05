@@ -2,6 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+//! libtwoyi - twoyi container server
+//!
+//! This is a PIE (Position Independent Executable) that works both as:
+//! - A JNI library when loaded by Android app (via System.loadLibrary)
+//! - An executable when run directly (./libtwoyi.so -r rootfs)
+//!
+//! Similar to libanbox.so in the ananbox project.
+
 use jni::objects::JValue;
 use jni::sys::{jclass, jfloat, jint, jobject, JNI_ERR, jstring};
 use jni::JNIEnv;
@@ -18,8 +26,20 @@ use android_logger::Config;
 use std::fs::File;
 use std::process::{Command, Stdio};
 
+// Original renderer modules
 mod input;
 mod renderer_bindings;
+
+// Server modules
+mod framebuffer;
+mod gralloc;
+mod rom_patcher;
+mod server;
+mod cli;
+mod server_jni;
+
+// Re-export server functionality for potential future use
+pub use server::{ServerConfig, TwoyiServer};
 
 /// ## Examples
 /// ```
@@ -36,8 +56,9 @@ macro_rules! jni_method {
 }
 
 static RENDERER_STARTED: AtomicBool = AtomicBool::new(false);
+
 #[no_mangle]
-pub fn renderer_init(
+pub extern "C" fn renderer_init(
     env: JNIEnv,
     _clz: jclass,
     surface: jobject,
@@ -120,7 +141,7 @@ pub fn renderer_init(
 }
 
 #[no_mangle]
-pub fn renderer_reset_window(
+pub extern "C" fn renderer_reset_window(
     env: JNIEnv,
     _clz: jclass,
     surface: jobject,
@@ -137,7 +158,7 @@ pub fn renderer_reset_window(
 }
 
 #[no_mangle]
-pub fn renderer_remove_window(env: JNIEnv, _clz: jclass, surface: jobject) {
+pub extern "C" fn renderer_remove_window(env: JNIEnv, _clz: jclass, surface: jobject) {
     debug!("renderer_remove_window");
 
     unsafe {
@@ -147,7 +168,7 @@ pub fn renderer_remove_window(env: JNIEnv, _clz: jclass, surface: jobject) {
 }
 
 #[no_mangle]
-pub fn handle_touch(env: JNIEnv, _clz: jclass, event: jobject) {
+pub extern "C" fn handle_touch(env: JNIEnv, _clz: jclass, event: jobject) {
     // TODO: cache the field id.
     let ptr = env.get_field(event, "mNativePtr", "J").unwrap();
 
@@ -162,7 +183,8 @@ pub fn handle_touch(env: JNIEnv, _clz: jclass, event: jobject) {
     }
 }
 
-pub fn send_key_code(_env: JNIEnv, _clz: jclass, keycode: jint) {
+#[no_mangle]
+pub extern "C" fn send_key_code(_env: JNIEnv, _clz: jclass, keycode: jint) {
     debug!("send key code!");
     input::send_key_code(keycode);
 }
@@ -194,9 +216,10 @@ unsafe fn register_natives(jvm: &JavaVM, class_name: &str, methods: &[NativeMeth
     }
 }
 
+/// JNI_OnLoad - called when the library is loaded by System.loadLibrary()
 #[no_mangle]
 #[allow(non_snake_case)]
-unsafe fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
+pub extern "C" fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
     android_logger::init_once(
         Config::default()
             .with_min_level(Level::Info)
@@ -204,6 +227,13 @@ unsafe fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
     );
 
     debug!("JNI_OnLoad");
+    
+    // Initialize the renderer library (loads libOpenglRender.so dynamically)
+    if renderer_bindings::init_renderer() {
+        info!("OpenGL renderer initialized");
+    } else {
+        info!("OpenGL renderer not available (this is OK for server-only mode)");
+    }
 
     let class_name: &str = "io/twoyi/Renderer";
     let jni_methods = [
@@ -222,5 +252,42 @@ unsafe fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
         jni_method!(sendKeycode, send_key_code, "(I)V"),
     ];
 
-    register_natives(&jvm, class_name, jni_methods.as_ref())
+    // Register renderer methods
+    let result = unsafe { register_natives(&jvm, class_name, jni_methods.as_ref()) };
+    
+    // Also register server JNI methods
+    server_jni::register_server_natives(&jvm);
+    
+    result
+}
+
+/// Main entry point for standalone execution
+/// Usage: ./libtwoyi.so -r $(realpath rootfs)
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    
+    // Convert args to C-style CStrings
+    // We need to keep c_args alive for the duration of run_cli
+    let c_args: Vec<std::ffi::CString> = args
+        .iter()
+        .filter_map(|arg| {
+            match std::ffi::CString::new(arg.as_str()) {
+                Ok(cstr) => Some(cstr),
+                Err(e) => {
+                    eprintln!("Warning: skipping argument with invalid characters: {}", e);
+                    None
+                }
+            }
+        })
+        .collect();
+    
+    // Create pointer array - c_args must remain in scope
+    let c_argv: Vec<*const libc::c_char> = c_args.iter().map(|s| s.as_ptr()).collect();
+    
+    let exit_code = cli::run_cli(c_argv.len() as libc::c_int, c_argv.as_ptr());
+    
+    // c_args is still alive here, so pointers in c_argv are valid
+    drop(c_args);
+    
+    std::process::exit(exit_code);
 }

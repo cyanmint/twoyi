@@ -6,32 +6,34 @@
 package io.twoyi.utils;
 
 import android.content.Context;
-import android.content.res.AssetManager;
+import android.content.pm.ApplicationInfo;
 import android.util.Log;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
- * Manages the twoyi server binary and connections
+ * Manages the twoyi server as a standalone process.
+ * 
+ * This class spawns libtwoyi.so as a subprocess for "local server mode".
+ * This is different from "legacy local mode" which uses JNI via the Renderer class.
+ * 
+ * libtwoyi.so is a PIE (Position Independent Executable) that works both as:
+ * - A JNI library when loaded by Android app (via System.loadLibrary)
+ * - An executable when run directly: ./libtwoyi.so -r $(realpath rootfs)
  */
 public class ServerManager {
     private static final String TAG = "ServerManager";
-    private static final String SERVER_BINARY_NAME = "twoyi-server";
+    private static final String LIBTWOYI_NAME = "libtwoyi.so";
 
-    private static Process serverProcess;
+    private static Process serverProcess = null;
+    private static Thread outputReaderThread = null;
     private static final List<ServerOutputListener> outputListeners = new ArrayList<>();
     private static final List<String> serverLog = new ArrayList<>();
     private static final int MAX_LOG_LINES = 500;
@@ -102,28 +104,11 @@ public class ServerManager {
     }
 
     /**
-     * Extract the server binary from assets to the app's files directory
+     * Get the path to libtwoyi.so
      */
-    public static File extractServerBinary(Context context) throws IOException {
-        File serverBinary = new File(context.getFilesDir(), SERVER_BINARY_NAME);
-        
-        AssetManager assets = context.getAssets();
-        try (InputStream in = new BufferedInputStream(assets.open(SERVER_BINARY_NAME));
-             OutputStream out = new BufferedOutputStream(new FileOutputStream(serverBinary))) {
-            byte[] buffer = new byte[8192];
-            int count;
-            while ((count = in.read(buffer)) > 0) {
-                out.write(buffer, 0, count);
-            }
-        }
-        
-        // Make executable
-        if (!serverBinary.setExecutable(true)) {
-            throw new IOException("Failed to make server binary executable");
-        }
-        
-        Log.i(TAG, "Server binary extracted to: " + serverBinary.getAbsolutePath());
-        return serverBinary;
+    private static String getLibtwoyiPath(Context context) {
+        ApplicationInfo applicationInfo = context.getApplicationInfo();
+        return new File(applicationInfo.nativeLibraryDir, LIBTWOYI_NAME).getAbsolutePath();
     }
 
     /**
@@ -136,7 +121,8 @@ public class ServerManager {
     }
 
     /**
-     * Start the local server with a specific profile configuration
+     * Start the local server with a specific profile configuration.
+     * This spawns libtwoyi.so as a subprocess (local server mode).
      */
     public static void startServer(Context context, String bindAddress, int width, int height, Profile profile) throws IOException {
         // Stop any existing server
@@ -145,8 +131,12 @@ public class ServerManager {
         // Clear previous log
         clearServerLog();
 
-        // Extract server binary
-        File serverBinary = extractServerBinary(context);
+        // Get libtwoyi.so path
+        String libtwoyiPath = getLibtwoyiPath(context);
+        File libtwoyiFile = new File(libtwoyiPath);
+        if (!libtwoyiFile.exists()) {
+            throw new IOException("libtwoyi.so not found at: " + libtwoyiPath);
+        }
         
         // Get rootfs path from profile or default
         ProfileManager profileManager = ProfileManager.getInstance(context);
@@ -157,89 +147,108 @@ public class ServerManager {
             throw new IOException("Rootfs directory does not exist: " + rootfsDir);
         }
 
-        // Get loader path
+        // Get loader path (may be null)
         String loaderPath = RomManager.getLoaderPath(context);
 
         // Ensure boot files exist in the profile-specific rootfs directory
         RomManager.ensureBootFiles(context, rootfsDir);
 
-        // Check if verbose debug is enabled (from profile or global setting)
-        boolean verboseDebug = profile != null ? 
-                profile.isVerboseDebug() : 
-                AppKV.getBooleanConfig(context, AppKV.VERBOSE_DEBUG, false);
-
         // Get profile name
         String profileName = profile != null ? profile.getName() : "default";
+        // Use default DPI (320 is a common standard DPI)
+        int dpi = 320;
 
-        // Build command with optional verbose mode and loader
+        notifyOutputListeners("Server process starting...");
+        notifyOutputListeners("Executable: " + libtwoyiPath);
+        notifyOutputListeners("Rootfs: " + rootfsDir.getAbsolutePath());
+        notifyOutputListeners("Bind address: " + bindAddress);
+        notifyOutputListeners("Screen: " + width + "x" + height + " @ " + dpi + "dpi");
+        notifyOutputListeners("Profile: " + profileName);
+
+        // Build command arguments for libtwoyi.so
         List<String> command = new ArrayList<>();
-        command.add(serverBinary.getAbsolutePath());
-        command.add("--rootfs");
+        command.add(libtwoyiPath);
+        command.add("-r");
         command.add(rootfsDir.getAbsolutePath());
-        command.add("--bind");
+        command.add("-b");
         command.add(bindAddress);
-        command.add("--width");
+        command.add("-W");
         command.add(String.valueOf(width));
-        command.add("--height");
+        command.add("-H");
         command.add(String.valueOf(height));
-        command.add("--loader");
-        command.add(loaderPath);
-        command.add("--profile");
+        command.add("-d");
+        command.add(String.valueOf(dpi));
+        command.add("-p");
         command.add(profileName);
         
-        if (verboseDebug) {
-            command.add("--verbose");
-            command.add("vv");
-            Log.i(TAG, "Verbose debug mode enabled");
-            notifyOutputListeners("Verbose debug mode enabled");
+        // Add loader if available
+        if (loaderPath != null && new File(loaderPath).exists()) {
+            command.add("-l");
+            command.add(loaderPath);
         }
-        
-        ProcessBuilder pb = new ProcessBuilder(command);
-        
-        pb.directory(context.getFilesDir());
-        pb.redirectErrorStream(true);
-        
-        // Start the process
-        serverProcess = pb.start();
-        
-        // Log output in background and notify listeners
-        new Thread(() -> {
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(serverProcess.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    Log.i(TAG, "Server: " + line);
-                    notifyOutputListeners(line);
+
+        Log.i(TAG, "Starting server with command: " + String.join(" ", command));
+        notifyOutputListeners("Command: " + String.join(" ", command));
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            pb.directory(rootfsDir);
+            
+            // Set LD_LIBRARY_PATH to find any dependent libraries
+            pb.environment().put("LD_LIBRARY_PATH", 
+                    context.getApplicationInfo().nativeLibraryDir + ":" + 
+                    System.getenv("LD_LIBRARY_PATH"));
+            
+            serverProcess = pb.start();
+            notifyOutputListeners("Server process started");
+
+            // Start thread to read output
+            outputReaderThread = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(serverProcess.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        final String outputLine = line;
+                        Log.d(TAG, "Server: " + outputLine);
+                        notifyOutputListeners(outputLine);
+                    }
+                } catch (IOException e) {
+                    Log.e(TAG, "Error reading server output", e);
                 }
-            } catch (IOException e) {
-                Log.e(TAG, "Error reading server output", e);
-                notifyOutputListeners("Error reading server output: " + e.getMessage());
-            } finally {
-                notifyOutputListeners("Server process ended");
-                serverProcess = null;  // Mark as stopped
-            }
-        }, "server-output").start();
-        
-        Log.i(TAG, "Server process started");
-        notifyOutputListeners("Server process started");
+                
+                // Check exit code when process ends
+                try {
+                    int exitCode = serverProcess.waitFor();
+                    Log.i(TAG, "Server process exited with code: " + exitCode);
+                    notifyOutputListeners("Server process exited with code: " + exitCode);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }, "ServerOutputReader");
+            outputReaderThread.start();
+
+            Log.i(TAG, "Server started as subprocess");
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to start server process", e);
+            throw new IOException("Failed to start server process: " + e.getMessage(), e);
+        }
     }
 
     /**
      * Stop the running server
      */
     public static void stopServer() {
-        Process process = serverProcess;
-        if (process != null) {
-            serverProcess = null;  // Clear reference first
-            process.destroy();
-            try {
-                if (!process.waitFor(5, TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
-                }
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
+        if (serverProcess != null) {
+            serverProcess.destroy();
+            serverProcess = null;
             Log.i(TAG, "Server stopped");
+            notifyOutputListeners("Server stopped");
+        }
+        
+        if (outputReaderThread != null) {
+            outputReaderThread.interrupt();
+            outputReaderThread = null;
         }
     }
 
@@ -247,8 +256,7 @@ public class ServerManager {
      * Check if the server is running
      */
     public static boolean isServerRunning() {
-        Process process = serverProcess;
-        return process != null && process.isAlive();
+        return serverProcess != null && serverProcess.isAlive();
     }
 
     /**

@@ -175,6 +175,63 @@ ln -s /data/data/com.termux/files/home/rootfs_1 /data/ty1
 ./scripts/prepare_rom.sh /data/ty1
 ```
 
+## Server (libtwoyi.so)
+
+The threetwi server is built as a single `libtwoyi.so` binary that works in two modes:
+
+### 1. JNI Library Mode (Android App)
+
+When loaded by the Android app, `libtwoyi.so` functions as a JNI library:
+
+```java
+// In Android app
+System.loadLibrary("twoyi");
+```
+
+The app uses this in two ways:
+- **Legacy local mode**: Direct JNI calls via `Renderer.init()` for in-process OpenGL rendering
+- **Local server mode**: Spawns `libtwoyi.so` as a subprocess for headless container operation with scrcpy display
+
+### 2. Standalone Executable Mode (Termux)
+
+The same `libtwoyi.so` can be executed directly in Termux:
+
+```bash
+# Basic usage
+./libtwoyi.so -r $(realpath rootfs)
+
+# With display dimensions
+./libtwoyi.so -r /path/to/rootfs -W 1080 -H 1920 -D 320
+
+# Full options
+./libtwoyi.so --rootfs /path/to/rootfs \
+              --width 1080 \
+              --height 1920 \
+              --dpi 320 \
+              --bind 127.0.0.1:5555
+```
+
+**Command-line options:**
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--rootfs` | `-r` | Path to rootfs directory | (required) |
+| `--width` | `-W` | Display width in pixels | 720 |
+| `--height` | `-H` | Display height in pixels | 1280 |
+| `--dpi` | `-D` | Display DPI | 320 |
+| `--bind` | `-b` | Server bind address | 127.0.0.1:5555 |
+
+**Requirements:**
+- The rootfs must be patched for the target path (see "Using ROMs in Custom Paths" section)
+- No `LD_LIBRARY_PATH` is needed - `libOpenglRender.so` is loaded dynamically only when needed
+
+### Architecture
+
+The server is built as a PIE (Position Independent Executable) binary with exported symbols, allowing it to function both as:
+- A shared library (loaded via `dlopen()` or `System.loadLibrary()`)
+- A standalone executable (run directly from shell)
+
+This is achieved using the linker flags `-rdynamic -Wl,--export-dynamic` and building as a binary target renamed to `.so`.
+
 ## Building
 
 Threetwi contains two parts:
