@@ -314,63 +314,29 @@ impl TwoyiServer {
     }
 }
 
-/// OpenGL post callback - called by libOpenglRender.so when a frame is rendered
-/// This function captures frames from the OpenGL renderer and stores them in the global buffer
-unsafe extern "C" fn opengl_post_callback(
-    _context: *mut std::os::raw::c_void,
-    _display_id: std::os::raw::c_int,
-    width: std::os::raw::c_int,
-    height: std::os::raw::c_int,
-    _ydir: std::os::raw::c_int,
-    _format: std::os::raw::c_int,
-    _frame_type: std::os::raw::c_int,
-    pixels: *mut u8,
-) {
-    if pixels.is_null() || width <= 0 || height <= 0 {
-        return;
-    }
-    
-    let frame_size = (width * height * 4) as usize; // RGBA format
-    let data = std::slice::from_raw_parts(pixels, frame_size);
-    
-    framebuffer::update_global_frame_buffer(width, height, data);
-}
-
 /// Initialize the OpenGL renderer for server mode (headless frame capture)
 /// Returns true if the OpenGL renderer was successfully initialized
-fn init_opengl_renderer_for_server(width: i32, height: i32, dpi: i32, opengl_lib: Option<&std::path::Path>) -> bool {
-    // Set custom library path if provided
+/// 
+/// Note: The current libOpenglRender.so requires a native window to function.
+/// In headless server mode without a window, we fall back to fake gralloc mode.
+/// This function is kept for future use when headless rendering is supported.
+fn init_opengl_renderer_for_server(_width: i32, _height: i32, _dpi: i32, opengl_lib: Option<&std::path::Path>) -> bool {
+    // Set custom library path if provided (for future use when we can use it)
     if let Some(path) = opengl_lib {
         if let Some(path_str) = path.to_str() {
             renderer_bindings::set_opengl_lib_path(path_str);
+            info!("OpenGL library path set to: {}", path_str);
         }
     }
     
-    // Try to initialize the renderer library
-    if !renderer_bindings::is_renderer_available() {
-        info!("OpenGL renderer not available - will use fallback mode");
-        return false;
-    }
+    // The libOpenglRender.so requires a native window surface to function.
+    // In headless server mode, we don't have a window, so we cannot use the OpenGL renderer.
+    // The container will still use OpenGL rendering internally - we just can't capture frames from it.
+    // Fall back to fake gralloc mode which provides a test pattern for debugging.
+    info!("Server mode: OpenGL renderer requires a window surface - using fake gralloc mode");
+    info!("Note: Container still uses OpenGL internally, but frames cannot be captured without a window");
     
-    info!("Initializing OpenGL renderer for server mode ({}x{} @ {}dpi)", width, height, dpi);
-    
-    // Initialize the global frame buffer
-    framebuffer::init_global_frame_buffer(width, height);
-    
-    unsafe {
-        // Initialize the headless OpenGL renderer
-        let result = renderer_bindings::initOpenGLRenderer(width, height, dpi, dpi, 60);
-        if result < 0 {
-            warn!("initOpenGLRenderer failed with code: {}", result);
-            return false;
-        }
-        
-        // Set up the post callback to capture rendered frames
-        renderer_bindings::setPostCallback(opengl_post_callback, std::ptr::null_mut());
-    }
-    
-    info!("OpenGL renderer initialized successfully for frame capture");
-    true
+    false
 }
 
 /// Set up the rootfs environment for running the container
