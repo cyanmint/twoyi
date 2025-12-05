@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use log::{info, error};
 
 use crate::{ServerConfig, TwoyiServer};
+use crate::server::normalize_path;
 
 /// Default ADB address for scrcpy connections
 const DEFAULT_ADB_ADDRESS: &str = "0.0.0.0:5556";
@@ -101,7 +102,7 @@ pub fn run_cli(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_i
             "-r" | "--rootfs" => {
                 i += 1;
                 if i < args.len() {
-                    rootfs = Some(PathBuf::from(&args[i]));
+                    rootfs = Some(normalize_path(PathBuf::from(&args[i])));
                 } else {
                     eprintln!("Error: -r/--rootfs requires a path argument");
                     return 1;
@@ -110,7 +111,7 @@ pub fn run_cli(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_i
             "-l" | "--loader" => {
                 i += 1;
                 if i < args.len() {
-                    loader = Some(PathBuf::from(&args[i]));
+                    loader = Some(normalize_path(PathBuf::from(&args[i])));
                 } else {
                     eprintln!("Error: -l/--loader requires a path argument");
                     return 1;
@@ -119,7 +120,7 @@ pub fn run_cli(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_i
             "-g" | "--opengl" => {
                 i += 1;
                 if i < args.len() {
-                    opengl_lib = Some(PathBuf::from(&args[i]));
+                    opengl_lib = Some(normalize_path(PathBuf::from(&args[i])));
                 } else {
                     eprintln!("Error: -g/--opengl requires a path argument");
                     return 1;

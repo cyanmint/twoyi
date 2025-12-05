@@ -25,6 +25,18 @@ use crate::renderer_bindings;
 /// Default ADB address for scrcpy connections
 const DEFAULT_ADB_ADDRESS: &str = "0.0.0.0:5556";
 
+/// Normalize a path by converting /data/user/0/ to /data/data/ for user 0
+/// This is necessary because on Android, /data/user/0/ is a symlink to /data/data/
+/// and using the canonical form ensures consistency in path matching
+pub fn normalize_path(path: PathBuf) -> PathBuf {
+    let path_str = path.to_string_lossy();
+    if path_str.starts_with("/data/user/0/") {
+        PathBuf::from(path_str.replacen("/data/user/0/", "/data/data/", 1))
+    } else {
+        path
+    }
+}
+
 /// Server configuration
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -108,9 +120,9 @@ impl TwoyiServer {
             return Err(format!("Rootfs directory does not exist: {:?}", self.config.rootfs));
         }
 
-        // Convert rootfs to absolute path
-        let rootfs = self.config.rootfs.canonicalize()
-            .map_err(|e| format!("Failed to canonicalize rootfs path: {}", e))?;
+        // Convert rootfs to absolute path and normalize /data/user/0 to /data/data
+        let rootfs = normalize_path(self.config.rootfs.canonicalize()
+            .map_err(|e| format!("Failed to canonicalize rootfs path: {}", e))?);
         info!("Resolved rootfs path: {:?}", rootfs);
 
         let init_path = rootfs.join("init");
