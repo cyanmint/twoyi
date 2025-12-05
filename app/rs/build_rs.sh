@@ -11,35 +11,24 @@ set -e
 # 1. A JNI library when loaded by Android app
 # 2. An executable when run directly (./libtwoyi.so -r rootfs)
 #
-# Linker flags are configured in .cargo/config.toml:
+# Linker flags:
 # - PIE: Position Independent Executable (default for Android)
 # - -rdynamic: Export all symbols to the dynamic symbol table
 # - --export-dynamic: Allow dlopen() to see all symbols
 # - --allow-shlib-undefined: Allow unresolved symbols from shared libs (resolved at runtime)
 
+# Set linker flags via RUSTFLAGS
+export RUSTFLAGS="-C link-args=-rdynamic -C link-args=-Wl,--export-dynamic -C link-args=-Wl,--allow-shlib-undefined"
+
 # Build the binary
 cargo xdk -t arm64-v8a build $1
 
 # Get build mode (release or debug)
-if [[ "$*" == *"--release"* ]]; then
-    BUILD_DIR="release"
-else
-    BUILD_DIR="debug"
-fi
-
-# Rename the binary to libtwoyi.so and copy to jniLibs
-mkdir -p ../src/main/jniLibs/arm64-v8a
-cp target/aarch64-linux-android/${BUILD_DIR}/twoyi ../src/main/jniLibs/arm64-v8a/libtwoyi.so
-
-echo "Built libtwoyi.so in ../src/main/jniLibs/arm64-v8a/"
-ls -la ../src/main/jniLibs/arm64-v8a/libtwoyi.so
-
-# Get build mode (release or debug)
-if [[ "$*" == *"--release"* ]]; then
-    BUILD_DIR="release"
-else
-    BUILD_DIR="debug"
-fi
+# Use case statement for POSIX compatibility (sh doesn't support [[)
+BUILD_DIR="debug"
+case "$*" in
+    *--release*) BUILD_DIR="release" ;;
+esac
 
 # Rename the binary to libtwoyi.so and copy to jniLibs
 mkdir -p ../src/main/jniLibs/arm64-v8a
