@@ -6,18 +6,12 @@ name = "twoyi"
 version = "0.1.0"
 edition = "2021"
 
-# Build as both:
-# 1. A shared library (cdylib) for JNI when loaded by Android app
-# 2. A binary (bin) for standalone execution in Termux
+# Build as a single executable that works both as:
+# 1. A JNI library when loaded by Android app (via System.loadLibrary)
+# 2. An executable when run directly (./libtwoyi.so -r rootfs)
 # 
-# The binary has a main() entry point for CLI mode.
-# The cdylib exports JNI symbols for library mode.
-# 
-# Both share the same code - lib.rs contains all functionality.
-
-[lib]
-name = "twoyi"
-crate-type = ["cdylib"]
+# This is achieved by building as a binary with PIE and dynamic symbol export,
+# similar to libanbox.so in the ananbox project.
 
 [[bin]]
 name = "twoyi"

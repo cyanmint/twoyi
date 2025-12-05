@@ -58,6 +58,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: native-libs-arm64-v8a
-        path: |
-          app/src/main/jniLibs/arm64-v8a/
-          app/rs/target/aarch64-linux-android/release/twoyi
+        path: app/src/main/jniLibs/arm64-v8a/

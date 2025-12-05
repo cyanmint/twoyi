@@ -13,8 +13,9 @@ import android.util.Log;
  * This class provides JNI bindings to libtwoyi.so,
  * allowing the container server to run directly in the app process.
  * 
- * For standalone usage in Termux, use the separate 'twoyi' binary:
- *   ./twoyi -r $(realpath rootfs)
+ * libtwoyi.so is a PIE (Position Independent Executable) that works both as:
+ * - A JNI library when loaded by Android app (via System.loadLibrary)
+ * - An executable when run directly in Termux: ./libtwoyi.so -r $(realpath rootfs)
  */
 public class NativeServer {
     private static final String TAG = "NativeServer";
