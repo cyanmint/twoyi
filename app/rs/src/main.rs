@@ -227,6 +227,13 @@ pub extern "C" fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
     );
 
     debug!("JNI_OnLoad");
+    
+    // Initialize the renderer library (loads libOpenglRender.so dynamically)
+    if renderer_bindings::init_renderer() {
+        info!("OpenGL renderer initialized");
+    } else {
+        info!("OpenGL renderer not available (this is OK for server-only mode)");
+    }
 
     let class_name: &str = "io/twoyi/Renderer";
     let jni_methods = [
