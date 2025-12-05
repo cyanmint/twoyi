@@ -6,9 +6,8 @@
 package io.twoyi.utils;
 
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
 import android.util.Log;
-
-import io.twoyi.NativeServer;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -20,15 +19,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Manages the twoyi server via JNI (libtwoyi.so)
+ * Manages the twoyi server as a standalone process.
  * 
- * The server runs in-process using JNI calls to libtwoyi.so,
- * which works both as a JNI library and as a standalone executable.
+ * This class spawns libtwoyi.so as a subprocess for "local server mode".
+ * This is different from "legacy local mode" which uses JNI via the Renderer class.
+ * 
+ * libtwoyi.so is a PIE (Position Independent Executable) that works both as:
+ * - A JNI library when loaded by Android app (via System.loadLibrary)
+ * - An executable when run directly: ./libtwoyi.so -r $(realpath rootfs)
  */
 public class ServerManager {
     private static final String TAG = "ServerManager";
+    private static final String LIBTWOYI_NAME = "libtwoyi.so";
 
-    private static boolean serverRunning = false;
+    private static Process serverProcess = null;
+    private static Thread outputReaderThread = null;
     private static final List<ServerOutputListener> outputListeners = new ArrayList<>();
     private static final List<String> serverLog = new ArrayList<>();
     private static final int MAX_LOG_LINES = 500;
@@ -99,6 +104,14 @@ public class ServerManager {
     }
 
     /**
+     * Get the path to libtwoyi.so
+     */
+    private static String getLibtwoyiPath(Context context) {
+        ApplicationInfo applicationInfo = context.getApplicationInfo();
+        return new File(applicationInfo.nativeLibraryDir, LIBTWOYI_NAME).getAbsolutePath();
+    }
+
+    /**
      * Start the local server with the given rootfs path and bind address
      */
     public static void startServer(Context context, String bindAddress, int width, int height) throws IOException {
@@ -108,7 +121,8 @@ public class ServerManager {
     }
 
     /**
-     * Start the local server with a specific profile configuration
+     * Start the local server with a specific profile configuration.
+     * This spawns libtwoyi.so as a subprocess (local server mode).
      */
     public static void startServer(Context context, String bindAddress, int width, int height, Profile profile) throws IOException {
         // Stop any existing server
@@ -117,9 +131,11 @@ public class ServerManager {
         // Clear previous log
         clearServerLog();
 
-        // Check if native library is available
-        if (!NativeServer.isLibraryLoaded()) {
-            throw new IOException("Native library libtwoyi.so not loaded");
+        // Get libtwoyi.so path
+        String libtwoyiPath = getLibtwoyiPath(context);
+        File libtwoyiFile = new File(libtwoyiPath);
+        if (!libtwoyiFile.exists()) {
+            throw new IOException("libtwoyi.so not found at: " + libtwoyiPath);
         }
         
         // Get rootfs path from profile or default
@@ -141,33 +157,80 @@ public class ServerManager {
         String profileName = profile != null ? profile.getName() : "default";
         int dpi = profile != null ? profile.getDpi() : 320;
 
-        // Parse bind address
-        String adbAddress = "0.0.0.0:5556";
-
-        notifyOutputListeners("Starting server via JNI...");
+        notifyOutputListeners("Server process starting...");
+        notifyOutputListeners("Executable: " + libtwoyiPath);
         notifyOutputListeners("Rootfs: " + rootfsDir.getAbsolutePath());
         notifyOutputListeners("Bind address: " + bindAddress);
         notifyOutputListeners("Screen: " + width + "x" + height + " @ " + dpi + "dpi");
         notifyOutputListeners("Profile: " + profileName);
 
-        // Start server via JNI
-        boolean success = NativeServer.startServer(
-                rootfsDir.getAbsolutePath(),
-                loaderPath,  // Can be null
-                bindAddress,
-                adbAddress,
-                width,
-                height,
-                dpi,
-                profileName
-        );
+        // Build command arguments for libtwoyi.so
+        List<String> command = new ArrayList<>();
+        command.add(libtwoyiPath);
+        command.add("-r");
+        command.add(rootfsDir.getAbsolutePath());
+        command.add("-b");
+        command.add(bindAddress);
+        command.add("-W");
+        command.add(String.valueOf(width));
+        command.add("-H");
+        command.add(String.valueOf(height));
+        command.add("-d");
+        command.add(String.valueOf(dpi));
+        command.add("-p");
+        command.add(profileName);
+        
+        // Add loader if available
+        if (loaderPath != null && new File(loaderPath).exists()) {
+            command.add("-l");
+            command.add(loaderPath);
+        }
 
-        if (success) {
-            serverRunning = true;
-            Log.i(TAG, "Server started via JNI");
-            notifyOutputListeners("Server started successfully");
-        } else {
-            throw new IOException("Failed to start native server");
+        Log.i(TAG, "Starting server with command: " + String.join(" ", command));
+        notifyOutputListeners("Command: " + String.join(" ", command));
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            pb.directory(rootfsDir);
+            
+            // Set LD_LIBRARY_PATH to find any dependent libraries
+            pb.environment().put("LD_LIBRARY_PATH", 
+                    context.getApplicationInfo().nativeLibraryDir + ":" + 
+                    System.getenv("LD_LIBRARY_PATH"));
+            
+            serverProcess = pb.start();
+            notifyOutputListeners("Server process started");
+
+            // Start thread to read output
+            outputReaderThread = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(serverProcess.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        final String outputLine = line;
+                        Log.d(TAG, "Server: " + outputLine);
+                        notifyOutputListeners(outputLine);
+                    }
+                } catch (IOException e) {
+                    Log.e(TAG, "Error reading server output", e);
+                }
+                
+                // Check exit code when process ends
+                try {
+                    int exitCode = serverProcess.waitFor();
+                    Log.i(TAG, "Server process exited with code: " + exitCode);
+                    notifyOutputListeners("Server process exited with code: " + exitCode);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }, "ServerOutputReader");
+            outputReaderThread.start();
+
+            Log.i(TAG, "Server started as subprocess");
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to start server process", e);
+            throw new IOException("Failed to start server process: " + e.getMessage(), e);
         }
     }
 
@@ -175,11 +238,16 @@ public class ServerManager {
      * Stop the running server
      */
     public static void stopServer() {
-        if (serverRunning) {
-            NativeServer.stopServer();
-            serverRunning = false;
+        if (serverProcess != null) {
+            serverProcess.destroy();
+            serverProcess = null;
             Log.i(TAG, "Server stopped");
             notifyOutputListeners("Server stopped");
+        }
+        
+        if (outputReaderThread != null) {
+            outputReaderThread.interrupt();
+            outputReaderThread = null;
         }
     }
 
@@ -187,7 +255,7 @@ public class ServerManager {
      * Check if the server is running
      */
     public static boolean isServerRunning() {
-        return serverRunning && NativeServer.isServerRunning();
+        return serverProcess != null && serverProcess.isAlive();
     }
 
     /**
