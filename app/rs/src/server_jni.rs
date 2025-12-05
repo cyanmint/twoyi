@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::{ServerConfig, TwoyiServer};
 use crate::input as server_input;
+use crate::server::normalize_path;
 
 /// Global server instance (lazy initialized)
 static SERVER: once_cell::sync::Lazy<Mutex<Option<Arc<TwoyiServer>>>> = 
@@ -90,8 +91,8 @@ pub extern "C" fn native_start_server(
     };
 
     let config = ServerConfig {
-        rootfs: PathBuf::from(rootfs_str),
-        loader: loader_str.map(PathBuf::from),
+        rootfs: normalize_path(PathBuf::from(rootfs_str)),
+        loader: loader_str.map(|s| normalize_path(PathBuf::from(s))),
         bind_address: bind_str,
         adb_address: adb_str,
         width,
@@ -189,8 +190,13 @@ pub extern "C" fn native_start_input_system(
         }
     };
 
-    info!("Starting input system: {}x{} in {}", width, height, rootfs_str);
-    server_input::start_input_system(width, height, &rootfs_str);
+    // Normalize path: /data/user/0/... -> /data/data/...
+    let normalized_rootfs = normalize_path(PathBuf::from(&rootfs_str))
+        .to_string_lossy()
+        .to_string();
+
+    info!("Starting input system: {}x{} in {}", width, height, normalized_rootfs);
+    server_input::start_input_system(width, height, &normalized_rootfs);
 }
 
 /// Handle touch event from Java
