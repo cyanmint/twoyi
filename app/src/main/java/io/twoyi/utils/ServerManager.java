@@ -6,32 +6,29 @@
 package io.twoyi.utils;
 
 import android.content.Context;
-import android.content.res.AssetManager;
 import android.util.Log;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
+import io.twoyi.NativeServer;
+
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
- * Manages the twoyi server binary and connections
+ * Manages the twoyi server via JNI (libtwoyi.so)
+ * 
+ * The server runs in-process using JNI calls to libtwoyi.so,
+ * which works both as a JNI library and as a standalone executable.
  */
 public class ServerManager {
     private static final String TAG = "ServerManager";
-    private static final String SERVER_BINARY_NAME = "twoyi-server";
 
-    private static Process serverProcess;
+    private static boolean serverRunning = false;
     private static final List<ServerOutputListener> outputListeners = new ArrayList<>();
     private static final List<String> serverLog = new ArrayList<>();
     private static final int MAX_LOG_LINES = 500;
@@ -102,31 +99,6 @@ public class ServerManager {
     }
 
     /**
-     * Extract the server binary from assets to the app's files directory
-     */
-    public static File extractServerBinary(Context context) throws IOException {
-        File serverBinary = new File(context.getFilesDir(), SERVER_BINARY_NAME);
-        
-        AssetManager assets = context.getAssets();
-        try (InputStream in = new BufferedInputStream(assets.open(SERVER_BINARY_NAME));
-             OutputStream out = new BufferedOutputStream(new FileOutputStream(serverBinary))) {
-            byte[] buffer = new byte[8192];
-            int count;
-            while ((count = in.read(buffer)) > 0) {
-                out.write(buffer, 0, count);
-            }
-        }
-        
-        // Make executable
-        if (!serverBinary.setExecutable(true)) {
-            throw new IOException("Failed to make server binary executable");
-        }
-        
-        Log.i(TAG, "Server binary extracted to: " + serverBinary.getAbsolutePath());
-        return serverBinary;
-    }
-
-    /**
      * Start the local server with the given rootfs path and bind address
      */
     public static void startServer(Context context, String bindAddress, int width, int height) throws IOException {
@@ -145,8 +117,10 @@ public class ServerManager {
         // Clear previous log
         clearServerLog();
 
-        // Extract server binary
-        File serverBinary = extractServerBinary(context);
+        // Check if native library is available
+        if (!NativeServer.isLibraryLoaded()) {
+            throw new IOException("Native library libtwoyi.so not loaded");
+        }
         
         // Get rootfs path from profile or default
         ProfileManager profileManager = ProfileManager.getInstance(context);
@@ -157,89 +131,55 @@ public class ServerManager {
             throw new IOException("Rootfs directory does not exist: " + rootfsDir);
         }
 
-        // Get loader path
+        // Get loader path (may be null)
         String loaderPath = RomManager.getLoaderPath(context);
 
         // Ensure boot files exist in the profile-specific rootfs directory
         RomManager.ensureBootFiles(context, rootfsDir);
 
-        // Check if verbose debug is enabled (from profile or global setting)
-        boolean verboseDebug = profile != null ? 
-                profile.isVerboseDebug() : 
-                AppKV.getBooleanConfig(context, AppKV.VERBOSE_DEBUG, false);
-
-        // Get profile name
+        // Get profile name and DPI
         String profileName = profile != null ? profile.getName() : "default";
+        int dpi = profile != null ? profile.getDpi() : 320;
 
-        // Build command with optional verbose mode and loader
-        List<String> command = new ArrayList<>();
-        command.add(serverBinary.getAbsolutePath());
-        command.add("--rootfs");
-        command.add(rootfsDir.getAbsolutePath());
-        command.add("--bind");
-        command.add(bindAddress);
-        command.add("--width");
-        command.add(String.valueOf(width));
-        command.add("--height");
-        command.add(String.valueOf(height));
-        command.add("--loader");
-        command.add(loaderPath);
-        command.add("--profile");
-        command.add(profileName);
-        
-        if (verboseDebug) {
-            command.add("--verbose");
-            command.add("vv");
-            Log.i(TAG, "Verbose debug mode enabled");
-            notifyOutputListeners("Verbose debug mode enabled");
+        // Parse bind address
+        String adbAddress = "0.0.0.0:5556";
+
+        notifyOutputListeners("Starting server via JNI...");
+        notifyOutputListeners("Rootfs: " + rootfsDir.getAbsolutePath());
+        notifyOutputListeners("Bind address: " + bindAddress);
+        notifyOutputListeners("Screen: " + width + "x" + height + " @ " + dpi + "dpi");
+        notifyOutputListeners("Profile: " + profileName);
+
+        // Start server via JNI
+        boolean success = NativeServer.startServer(
+                rootfsDir.getAbsolutePath(),
+                loaderPath,  // Can be null
+                bindAddress,
+                adbAddress,
+                width,
+                height,
+                dpi,
+                profileName
+        );
+
+        if (success) {
+            serverRunning = true;
+            Log.i(TAG, "Server started via JNI");
+            notifyOutputListeners("Server started successfully");
+        } else {
+            throw new IOException("Failed to start native server");
         }
-        
-        ProcessBuilder pb = new ProcessBuilder(command);
-        
-        pb.directory(context.getFilesDir());
-        pb.redirectErrorStream(true);
-        
-        // Start the process
-        serverProcess = pb.start();
-        
-        // Log output in background and notify listeners
-        new Thread(() -> {
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(serverProcess.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    Log.i(TAG, "Server: " + line);
-                    notifyOutputListeners(line);
-                }
-            } catch (IOException e) {
-                Log.e(TAG, "Error reading server output", e);
-                notifyOutputListeners("Error reading server output: " + e.getMessage());
-            } finally {
-                notifyOutputListeners("Server process ended");
-                serverProcess = null;  // Mark as stopped
-            }
-        }, "server-output").start();
-        
-        Log.i(TAG, "Server process started");
-        notifyOutputListeners("Server process started");
     }
 
     /**
      * Stop the running server
      */
     public static void stopServer() {
-        Process process = serverProcess;
-        if (process != null) {
-            serverProcess = null;  // Clear reference first
-            process.destroy();
-            try {
-                if (!process.waitFor(5, TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
-                }
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
+        if (serverRunning) {
+            NativeServer.stopServer();
+            serverRunning = false;
             Log.i(TAG, "Server stopped");
+            notifyOutputListeners("Server stopped");
         }
     }
 
@@ -247,8 +187,7 @@ public class ServerManager {
      * Check if the server is running
      */
     public static boolean isServerRunning() {
-        Process process = serverProcess;
-        return process != null && process.isAlive();
+        return serverRunning && NativeServer.isServerRunning();
     }
 
     /**
