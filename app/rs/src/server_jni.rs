@@ -105,7 +105,13 @@ pub extern "C" fn native_start_server(
     
     // Store server instance
     {
-        let mut guard = SERVER.lock().unwrap();
+        let mut guard = match SERVER.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                error!("Mutex poisoned: {:?}", e);
+                return JNI_FALSE;
+            }
+        };
         *guard = Some(server.clone());
     }
 
