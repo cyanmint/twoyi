@@ -34,7 +34,7 @@ pub mod framebuffer;
 pub mod gralloc;
 pub mod rom_patcher;
 mod server;
-mod cli;
+pub mod cli;
 mod server_jni;
 
 // Re-export server functionality
@@ -249,11 +249,4 @@ unsafe fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
     server_jni::register_server_natives(&jvm);
     
     result
-}
-
-/// Entry point when the library is executed directly (e.g., ./libtwoyi.so -r rootfs)
-/// This is called via the _start symbol or when the linker treats the .so as executable
-#[no_mangle]
-pub extern "C" fn main(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_int {
-    cli::run_cli(argc, argv)
 }

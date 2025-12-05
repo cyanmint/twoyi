@@ -6,12 +6,22 @@ name = "twoyi"
 version = "0.1.0"
 edition = "2021"
 
-# Build as a single shared library that can also be executed directly
-# When loaded as JNI library: provides JNI functions for Android app
-# When executed directly: ./libtwoyi.so -r rootfs works as CLI
+# Build as both:
+# 1. A shared library (cdylib) for JNI when loaded by Android app
+# 2. A binary (bin) for standalone execution in Termux
+# 
+# The binary has a main() entry point for CLI mode.
+# The cdylib exports JNI symbols for library mode.
+# 
+# Both share the same code - lib.rs contains all functionality.
+
 [lib]
 name = "twoyi"
 crate-type = ["cdylib"]
+
+[[bin]]
+name = "twoyi"
+path = "src/main.rs"
 
 [dependencies]
 libc = "0.2.112"
