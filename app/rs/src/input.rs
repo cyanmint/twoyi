@@ -210,6 +210,11 @@ const ACTION_POINTER_UP: i32 = 6;
 
 /// Handle touch event from server (action-based instead of MotionEvent-based)
 pub fn handle_touch_event(action: i32, pointer_id: i32, x: f32, y: f32, pressure: f32) {
+    // Bounds check: pointer_id must be within valid range
+    if pointer_id < 0 || pointer_id as usize >= MAX_POINTERS {
+        return;
+    }
+    
     let opt = INPUT_SENDER.lock().unwrap();
     if let Some(ref fd) = *opt {
         match action {

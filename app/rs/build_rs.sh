@@ -15,9 +15,10 @@ set -e
 # - PIE: Position Independent Executable (default for Android)
 # - -rdynamic: Export all symbols to the dynamic symbol table
 # - --export-dynamic: Allow dlopen() to see all symbols
+# - --allow-shlib-undefined: Allow unresolved symbols from shared libs (resolved at runtime)
 
 # Set up linker flags for the Android target
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-args=-rdynamic -C link-args=-Wl,--export-dynamic"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-args=-rdynamic -C link-args=-Wl,--export-dynamic -C link-args=-Wl,--allow-shlib-undefined"
 
 # Build the binary
 cargo xdk -t arm64-v8a build $1
