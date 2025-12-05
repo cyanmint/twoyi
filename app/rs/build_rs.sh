@@ -23,7 +23,7 @@ export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-args=-rdynamic -C l
 cargo xdk -t arm64-v8a build $1
 
 # Get build mode (release or debug)
-if [[ "$1" == "--release" ]] || [[ "$1" == "-r" ]]; then
+if [[ "$*" == *"--release"* ]]; then
     BUILD_DIR="release"
 else
     BUILD_DIR="debug"
