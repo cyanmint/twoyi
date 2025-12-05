@@ -14,11 +14,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use crate::input;
 use crate::framebuffer;
 use crate::gralloc;
 use crate::rom_patcher;
+use crate::renderer_bindings;
 
 /// Default ADB address for scrcpy connections
 const DEFAULT_ADB_ADDRESS: &str = "0.0.0.0:5556";

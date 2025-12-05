@@ -19,6 +19,13 @@ type SetNativeWindowFn = unsafe extern "C" fn(*mut c_void) -> c_int;
 type ResetSubWindowFn = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int, c_int, c_int, c_int, f32, f32) -> c_int;
 type StartOpenGLRendererFn = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int, c_int, c_int) -> c_int;
 type RemoveSubWindowFn = unsafe extern "C" fn(*mut c_void) -> c_int;
+type InitOpenGLRendererFn = unsafe extern "C" fn(c_int, c_int, c_int, c_int, c_int) -> c_int;
+type StopOpenGLRendererFn = unsafe extern "C" fn();
+
+/// Post callback function type
+/// Parameters: context, display_id, width, height, ydir, format, frame_type, pixels
+pub type PostCallbackFn = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int, c_int, c_int, c_int, *mut u8);
+type SetPostCallbackFn = unsafe extern "C" fn(PostCallbackFn, *mut c_void);
 
 // Global storage for function pointers
 static mut LIB_HANDLE: *mut c_void = std::ptr::null_mut();
@@ -28,6 +35,9 @@ static mut FN_SET_NATIVE_WINDOW: Option<SetNativeWindowFn> = None;
 static mut FN_RESET_SUBWINDOW: Option<ResetSubWindowFn> = None;
 static mut FN_START_OPENGL_RENDERER: Option<StartOpenGLRendererFn> = None;
 static mut FN_REMOVE_SUBWINDOW: Option<RemoveSubWindowFn> = None;
+static mut FN_INIT_OPENGL_RENDERER: Option<InitOpenGLRendererFn> = None;
+static mut FN_STOP_OPENGL_RENDERER: Option<StopOpenGLRendererFn> = None;
+static mut FN_SET_POST_CALLBACK: Option<SetPostCallbackFn> = None;
 
 static INIT: Once = Once::new();
 
@@ -79,6 +89,9 @@ pub fn init_renderer() -> bool {
             load_fn!("resetSubWindow", ResetSubWindowFn, FN_RESET_SUBWINDOW);
             load_fn!("startOpenGLRenderer", StartOpenGLRendererFn, FN_START_OPENGL_RENDERER);
             load_fn!("removeSubWindow", RemoveSubWindowFn, FN_REMOVE_SUBWINDOW);
+            load_fn!("initOpenGLRenderer", InitOpenGLRendererFn, FN_INIT_OPENGL_RENDERER);
+            load_fn!("stopOpenGLRenderer", StopOpenGLRendererFn, FN_STOP_OPENGL_RENDERER);
+            load_fn!("setPostCallback", SetPostCallbackFn, FN_SET_POST_CALLBACK);
             
             success = true;
         }
@@ -167,5 +180,44 @@ pub unsafe fn removeSubWindow(window: *mut c_void) -> c_int {
     } else {
         error!("removeSubWindow not available");
         -1
+    }
+}
+
+/// Initialize the OpenGL renderer in headless mode (no native window)
+/// This is used for server mode where we capture frames via callback
+#[allow(dead_code)]
+pub unsafe fn initOpenGLRenderer(
+    width: c_int,
+    height: c_int,
+    xdpi: c_int,
+    ydpi: c_int,
+    fps: c_int,
+) -> c_int {
+    if let Some(f) = FN_INIT_OPENGL_RENDERER {
+        f(width, height, xdpi, ydpi, fps)
+    } else {
+        error!("initOpenGLRenderer not available");
+        -1
+    }
+}
+
+/// Stop the OpenGL renderer
+#[allow(dead_code)]
+pub unsafe fn stopOpenGLRenderer() {
+    if let Some(f) = FN_STOP_OPENGL_RENDERER {
+        f()
+    } else {
+        error!("stopOpenGLRenderer not available");
+    }
+}
+
+/// Set a callback function that will be called when each frame is rendered
+/// The callback receives: context, display_id, width, height, ydir, format, frame_type, pixels
+#[allow(dead_code)]
+pub unsafe fn setPostCallback(callback: PostCallbackFn, context: *mut c_void) {
+    if let Some(f) = FN_SET_POST_CALLBACK {
+        f(callback, context)
+    } else {
+        error!("setPostCallback not available");
     }
 }

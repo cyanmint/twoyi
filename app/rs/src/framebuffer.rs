@@ -3,14 +3,85 @@
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 use log::info;
 
 const FRAME_HEADER: &[u8] = b"FRAME";
 const FRAME_FPS: u64 = 30; // Target FPS for streaming
+
+/// Global frame buffer that can be written to from the OpenGL post callback
+/// This allows frames captured by the OpenGL renderer to be streamed to clients
+static GLOBAL_FRAME_BUFFER: once_cell::sync::Lazy<RwLock<Option<GlobalFrameBuffer>>> = 
+    once_cell::sync::Lazy::new(|| RwLock::new(None));
+
+/// Frame buffer data structure
+pub struct GlobalFrameBuffer {
+    pub width: i32,
+    pub height: i32,
+    pub data: Vec<u8>,
+    pub frame_count: AtomicU32,
+}
+
+impl GlobalFrameBuffer {
+    pub fn new(width: i32, height: i32) -> Self {
+        let size = (width * height * 4) as usize;
+        GlobalFrameBuffer {
+            width,
+            height,
+            data: vec![0u8; size],
+            frame_count: AtomicU32::new(0),
+        }
+    }
+}
+
+/// Initialize the global frame buffer for receiving OpenGL rendered frames
+pub fn init_global_frame_buffer(width: i32, height: i32) {
+    let mut buffer = GLOBAL_FRAME_BUFFER.write().unwrap();
+    *buffer = Some(GlobalFrameBuffer::new(width, height));
+    info!("Global frame buffer initialized: {}x{}", width, height);
+}
+
+/// Update the global frame buffer with new frame data (called from OpenGL post callback)
+pub fn update_global_frame_buffer(width: i32, height: i32, data: &[u8]) {
+    if let Ok(mut buffer_guard) = GLOBAL_FRAME_BUFFER.write() {
+        if let Some(ref mut buffer) = *buffer_guard {
+            // Resize if necessary
+            let expected_size = (width * height * 4) as usize;
+            if buffer.data.len() != expected_size {
+                buffer.data.resize(expected_size, 0);
+                buffer.width = width;
+                buffer.height = height;
+            }
+            // Copy frame data
+            let copy_len = std::cmp::min(data.len(), buffer.data.len());
+            buffer.data[..copy_len].copy_from_slice(&data[..copy_len]);
+            buffer.frame_count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Get the current frame from the global buffer (returns None if not initialized)
+pub fn get_global_frame() -> Option<Vec<u8>> {
+    if let Ok(buffer_guard) = GLOBAL_FRAME_BUFFER.read() {
+        if let Some(ref buffer) = *buffer_guard {
+            return Some(buffer.data.clone());
+        }
+    }
+    None
+}
+
+/// Check if the global frame buffer has been updated
+pub fn get_global_frame_count() -> u32 {
+    if let Ok(buffer_guard) = GLOBAL_FRAME_BUFFER.read() {
+        if let Some(ref buffer) = *buffer_guard {
+            return buffer.frame_count.load(Ordering::Relaxed);
+        }
+    }
+    0
+}
 
 /// Framebuffer streaming manager
 pub struct FrameStreamer {
@@ -19,6 +90,7 @@ pub struct FrameStreamer {
     clients: Arc<Mutex<Vec<TcpStream>>>,
     running: Arc<AtomicBool>,
     framebuffer_path: String,
+    use_opengl_renderer: Arc<AtomicBool>,
 }
 
 impl FrameStreamer {
@@ -36,6 +108,15 @@ impl FrameStreamer {
             clients: Arc::new(Mutex::new(Vec::new())),
             running: Arc::new(AtomicBool::new(false)),
             framebuffer_path: framebuffer_path.to_string(),
+            use_opengl_renderer: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Enable using the OpenGL renderer for frame capture
+    pub fn set_use_opengl_renderer(&self, use_it: bool) {
+        self.use_opengl_renderer.store(use_it, Ordering::SeqCst);
+        if use_it {
+            info!("FrameStreamer will use OpenGL renderer for frame capture");
         }
     }
     
@@ -56,29 +137,51 @@ impl FrameStreamer {
         let width = self.width;
         let height = self.height;
         let fb_path = self.framebuffer_path.clone();
+        let use_opengl = self.use_opengl_renderer.clone();
         
         thread::spawn(move || {
-            info!("Framebuffer streamer started");
+            info!("Framebuffer streamer started (OpenGL mode: {})", use_opengl.load(Ordering::SeqCst));
             let frame_duration = Duration::from_millis(1000 / FRAME_FPS);
             
             // Create a test pattern if framebuffer is not available
             let frame_size = (width * height * 4) as usize; // RGBA
             let mut frame_data = vec![0u8; frame_size];
             let mut frame_counter: u32 = 0;
+            let mut last_opengl_frame_count: u32 = 0;
             
             while running.load(Ordering::SeqCst) {
-                // Try to read from framebuffer, otherwise generate test pattern
-                let frame = if let Ok(mut fb) = std::fs::File::open(&fb_path) {
-                    let mut data = vec![0u8; frame_size];
-                    if fb.read_exact(&mut data).is_ok() {
-                        data
+                // Determine frame source based on configuration
+                let frame = if use_opengl.load(Ordering::SeqCst) {
+                    // Try to get frame from OpenGL renderer global buffer
+                    let opengl_frame_count = get_global_frame_count();
+                    if opengl_frame_count > last_opengl_frame_count {
+                        last_opengl_frame_count = opengl_frame_count;
+                        if let Some(opengl_frame) = get_global_frame() {
+                            opengl_frame
+                        } else {
+                            // OpenGL buffer not ready, use test pattern
+                            generate_test_pattern(&mut frame_data, width, height, frame_counter);
+                            frame_data.clone()
+                        }
+                    } else {
+                        // No new frame from OpenGL, skip sending or use last frame
+                        thread::sleep(frame_duration);
+                        continue;
+                    }
+                } else {
+                    // Try to read from framebuffer file, otherwise generate test pattern
+                    if let Ok(mut fb) = std::fs::File::open(&fb_path) {
+                        let mut data = vec![0u8; frame_size];
+                        if fb.read_exact(&mut data).is_ok() {
+                            data
+                        } else {
+                            generate_test_pattern(&mut frame_data, width, height, frame_counter);
+                            frame_data.clone()
+                        }
                     } else {
                         generate_test_pattern(&mut frame_data, width, height, frame_counter);
                         frame_data.clone()
                     }
-                } else {
-                    generate_test_pattern(&mut frame_data, width, height, frame_counter);
-                    frame_data.clone()
                 };
                 
                 // Send to all connected clients
