@@ -28,6 +28,7 @@ fn print_usage(program_name: &str) {
     eprintln!("OPTIONS:");
     eprintln!("    -r, --rootfs <PATH>      Path to the rootfs directory (required)");
     eprintln!("    -l, --loader <PATH>      Path to the loader library (libloader.so)");
+    eprintln!("    -g, --opengl <PATH>      Path to the OpenGL renderer library (libOpenglRender.so)");
     eprintln!("    -b, --bind <ADDR>        Address for control connections (default: {})", DEFAULT_BIND_ADDRESS);
     eprintln!("    -a, --adb <ADDR>         ADB address for scrcpy (default: {})", DEFAULT_ADB_ADDRESS);
     eprintln!("    -W, --width <PIXELS>     Screen width (default: 1080)");
@@ -42,6 +43,7 @@ fn print_usage(program_name: &str) {
     eprintln!("EXAMPLES:");
     eprintln!("    {} -r /data/data/io.twoyi/rootfs", program_name);
     eprintln!("    {} -r $(realpath rootfs) -W 720 -H 1280", program_name);
+    eprintln!("    {} -r /path/to/rootfs -g /path/to/libOpenglRender.so", program_name);
 }
 
 /// Parse command line arguments and run the server
@@ -77,6 +79,7 @@ pub fn run_cli(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_i
     // Parse arguments manually (simple implementation without external dependencies)
     let mut rootfs: Option<PathBuf> = None;
     let mut loader: Option<PathBuf> = None;
+    let mut opengl_lib: Option<PathBuf> = None;
     let mut bind_address = DEFAULT_BIND_ADDRESS.to_string();
     let mut adb_address = DEFAULT_ADB_ADDRESS.to_string();
     let mut width: i32 = 1080;
@@ -110,6 +113,15 @@ pub fn run_cli(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_i
                     loader = Some(PathBuf::from(&args[i]));
                 } else {
                     eprintln!("Error: -l/--loader requires a path argument");
+                    return 1;
+                }
+            }
+            "-g" | "--opengl" => {
+                i += 1;
+                if i < args.len() {
+                    opengl_lib = Some(PathBuf::from(&args[i]));
+                } else {
+                    eprintln!("Error: -g/--opengl requires a path argument");
                     return 1;
                 }
             }
@@ -228,6 +240,7 @@ pub fn run_cli(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_i
     let config = ServerConfig {
         rootfs,
         loader,
+        opengl_lib,
         bind_address,
         adb_address,
         width,

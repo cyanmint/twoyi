@@ -32,6 +32,8 @@ pub struct ServerConfig {
     pub rootfs: PathBuf,
     /// Path to the loader library (libloader.so)
     pub loader: Option<PathBuf>,
+    /// Path to the OpenGL renderer library (libOpenglRender.so)
+    pub opengl_lib: Option<PathBuf>,
     /// Address and port to bind for control connections
     pub bind_address: String,
     /// ADB address and port for scrcpy connections
@@ -57,6 +59,7 @@ impl Default for ServerConfig {
         ServerConfig {
             rootfs: PathBuf::from("/data/data/io.twoyi/rootfs"),
             loader: None,
+            opengl_lib: None,
             bind_address: "0.0.0.0:8765".to_string(),
             adb_address: DEFAULT_ADB_ADDRESS.to_string(),
             width: 1080,
@@ -132,7 +135,8 @@ impl TwoyiServer {
         let use_opengl_renderer = init_opengl_renderer_for_server(
             self.config.width,
             self.config.height,
-            self.config.dpi
+            self.config.dpi,
+            self.config.opengl_lib.as_deref()
         );
 
         // Start fake gralloc (still needed for container communication)
@@ -322,7 +326,14 @@ unsafe extern "C" fn opengl_post_callback(
 
 /// Initialize the OpenGL renderer for server mode (headless frame capture)
 /// Returns true if the OpenGL renderer was successfully initialized
-fn init_opengl_renderer_for_server(width: i32, height: i32, dpi: i32) -> bool {
+fn init_opengl_renderer_for_server(width: i32, height: i32, dpi: i32, opengl_lib: Option<&std::path::Path>) -> bool {
+    // Set custom library path if provided
+    if let Some(path) = opengl_lib {
+        if let Some(path_str) = path.to_str() {
+            renderer_bindings::set_opengl_lib_path(path_str);
+        }
+    }
+    
     // Try to initialize the renderer library
     if !renderer_bindings::is_renderer_available() {
         info!("OpenGL renderer not available - will use fallback mode");

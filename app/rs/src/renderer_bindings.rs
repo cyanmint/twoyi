@@ -9,7 +9,7 @@
 
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
-use std::sync::Once;
+use std::sync::{Once, Mutex};
 use log::{error, info};
 
 // Function pointer types
@@ -41,6 +41,9 @@ static mut FN_SET_POST_CALLBACK: Option<SetPostCallbackFn> = None;
 
 static INIT: Once = Once::new();
 
+/// Custom library path set via set_opengl_lib_path()
+static OPENGL_LIB_PATH: Mutex<Option<String>> = Mutex::new(None);
+
 extern "C" {
     fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
@@ -49,26 +52,41 @@ extern "C" {
 
 const RTLD_NOW: c_int = 2;
 
+/// Set a custom path for libOpenglRender.so
+/// This must be called before init_renderer() to take effect
+pub fn set_opengl_lib_path(path: &str) {
+    if let Ok(mut guard) = OPENGL_LIB_PATH.lock() {
+        *guard = Some(path.to_string());
+        info!("OpenGL library path set to: {}", path);
+    }
+}
+
 /// Initialize the OpenGL renderer library bindings
 /// Returns true if the library was loaded successfully, false otherwise
 pub fn init_renderer() -> bool {
     let mut success = false;
     INIT.call_once(|| {
         unsafe {
+            // Get custom path or use default
+            let lib_path = OPENGL_LIB_PATH.lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+                .unwrap_or_else(|| "libOpenglRender.so".to_string());
+            
             // Try to load libOpenglRender.so
-            let lib_name = CString::new("libOpenglRender.so").unwrap();
+            let lib_name = CString::new(lib_path.as_str()).unwrap();
             LIB_HANDLE = dlopen(lib_name.as_ptr(), RTLD_NOW);
             
             if LIB_HANDLE.is_null() {
                 let err = dlerror();
                 if !err.is_null() {
                     let err_str = std::ffi::CStr::from_ptr(err).to_string_lossy();
-                    info!("libOpenglRender.so not available: {} (this is OK for CLI mode)", err_str);
+                    info!("{} not available: {} (this is OK for CLI mode)", lib_path, err_str);
                 }
                 return;
             }
             
-            info!("libOpenglRender.so loaded successfully");
+            info!("{} loaded successfully", lib_path);
             
             // Load function pointers
             macro_rules! load_fn {
