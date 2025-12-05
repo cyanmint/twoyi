@@ -153,9 +153,10 @@ public class ServerManager {
         // Ensure boot files exist in the profile-specific rootfs directory
         RomManager.ensureBootFiles(context, rootfsDir);
 
-        // Get profile name and DPI
+        // Get profile name
         String profileName = profile != null ? profile.getName() : "default";
-        int dpi = profile != null ? profile.getDpi() : 320;
+        // Use default DPI (320 is a common standard DPI)
+        int dpi = 320;
 
         notifyOutputListeners("Server process starting...");
         notifyOutputListeners("Executable: " + libtwoyiPath);
