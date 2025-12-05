@@ -128,7 +128,14 @@ impl TwoyiServer {
         // Set up the rootfs environment
         setup_rootfs_environment(&rootfs);
 
-        // Start fake gralloc
+        // Try to initialize OpenGL renderer for frame capture
+        let use_opengl_renderer = init_opengl_renderer_for_server(
+            self.config.width,
+            self.config.height,
+            self.config.dpi
+        );
+
+        // Start fake gralloc (still needed for container communication)
         let gralloc = Arc::new(gralloc::FakeGralloc::new(&rootfs_str, self.config.width, self.config.height));
         gralloc.start();
         info!("Fake gralloc device started");
@@ -170,6 +177,12 @@ impl TwoyiServer {
             self.config.height,
             &fb_source
         ));
+        
+        // Enable OpenGL renderer mode if available
+        if use_opengl_renderer {
+            frame_streamer.set_use_opengl_renderer(true);
+        }
+        
         frame_streamer.start();
 
         // Keep gralloc instance alive
@@ -192,8 +205,9 @@ impl TwoyiServer {
                     let streamer = frame_streamer.clone();
                     let adb_addr = adb_address_for_clients.clone();
                     let profile = profile_name.clone();
+                    let opengl_mode = use_opengl_renderer;
                     thread::spawn(move || {
-                        handle_client(stream, width, height, &rootfs_clone, setup_mode, streamer, &adb_addr, &profile);
+                        handle_client(stream, width, height, &rootfs_clone, setup_mode, streamer, &adb_addr, &profile, opengl_mode);
                     });
                 }
                 Err(e) => {
@@ -282,6 +296,58 @@ impl TwoyiServer {
             }
         }
     }
+}
+
+/// OpenGL post callback - called by libOpenglRender.so when a frame is rendered
+/// This function captures frames from the OpenGL renderer and stores them in the global buffer
+unsafe extern "C" fn opengl_post_callback(
+    _context: *mut std::os::raw::c_void,
+    _display_id: std::os::raw::c_int,
+    width: std::os::raw::c_int,
+    height: std::os::raw::c_int,
+    _ydir: std::os::raw::c_int,
+    _format: std::os::raw::c_int,
+    _frame_type: std::os::raw::c_int,
+    pixels: *mut u8,
+) {
+    if pixels.is_null() || width <= 0 || height <= 0 {
+        return;
+    }
+    
+    let frame_size = (width * height * 4) as usize; // RGBA format
+    let data = std::slice::from_raw_parts(pixels, frame_size);
+    
+    framebuffer::update_global_frame_buffer(width, height, data);
+}
+
+/// Initialize the OpenGL renderer for server mode (headless frame capture)
+/// Returns true if the OpenGL renderer was successfully initialized
+fn init_opengl_renderer_for_server(width: i32, height: i32, dpi: i32) -> bool {
+    // Try to initialize the renderer library
+    if !renderer_bindings::is_renderer_available() {
+        info!("OpenGL renderer not available - will use fallback mode");
+        return false;
+    }
+    
+    info!("Initializing OpenGL renderer for server mode ({}x{} @ {}dpi)", width, height, dpi);
+    
+    // Initialize the global frame buffer
+    framebuffer::init_global_frame_buffer(width, height);
+    
+    unsafe {
+        // Initialize the headless OpenGL renderer
+        let result = renderer_bindings::initOpenGLRenderer(width, height, dpi, dpi, 60);
+        if result < 0 {
+            warn!("initOpenGLRenderer failed with code: {}", result);
+            return false;
+        }
+        
+        // Set up the post callback to capture rendered frames
+        renderer_bindings::setPostCallback(opengl_post_callback, std::ptr::null_mut());
+    }
+    
+    info!("OpenGL renderer initialized successfully for frame capture");
+    true
 }
 
 /// Set up the rootfs environment for running the container
@@ -621,11 +687,13 @@ fn handle_client(
     frame_streamer: Arc<framebuffer::FrameStreamer>,
     adb_address: &str,
     profile_name: &str,
+    use_opengl_renderer: bool,
 ) {
     let peer_addr = stream.peer_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string());
     info!("Client connected from {}", peer_addr);
 
     let status = if setup_mode { "setup" } else { "running" };
+    let display_mode = if use_opengl_renderer { "opengl_renderer" } else { "fake_gralloc" };
     
     let default_rootfs = "/data/data/io.twoyi/rootfs";
     let opengles_path = format!("{}/opengles", default_rootfs);
@@ -640,8 +708,9 @@ fn handle_client(
         "setup_mode": setup_mode,
         "streaming": true,
         "adb_address": adb_address,
-        "display_mode": "fake_gralloc",
-        "fake_gralloc": true,
+        "display_mode": display_mode,
+        "opengl_renderer": use_opengl_renderer,
+        "fake_gralloc": !use_opengl_renderer,
         "profile": profile_name,
         "sockets": {
             "opengles": opengles_path,

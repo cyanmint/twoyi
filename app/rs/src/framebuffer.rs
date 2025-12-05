@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
-use log::info;
+use log::{info, debug, warn};
 
 const FRAME_HEADER: &[u8] = b"FRAME";
 const FRAME_FPS: u64 = 30; // Target FPS for streaming
@@ -45,20 +45,31 @@ pub fn init_global_frame_buffer(width: i32, height: i32) {
 }
 
 /// Update the global frame buffer with new frame data (called from OpenGL post callback)
-pub fn update_global_frame_buffer(width: i32, height: i32, data: &[u8]) {
-    if let Ok(mut buffer_guard) = GLOBAL_FRAME_BUFFER.write() {
-        if let Some(ref mut buffer) = *buffer_guard {
-            // Resize if necessary
-            let expected_size = (width * height * 4) as usize;
-            if buffer.data.len() != expected_size {
-                buffer.data.resize(expected_size, 0);
-                buffer.width = width;
-                buffer.height = height;
+/// Returns true if the update was successful
+pub fn update_global_frame_buffer(width: i32, height: i32, data: &[u8]) -> bool {
+    match GLOBAL_FRAME_BUFFER.write() {
+        Ok(mut buffer_guard) => {
+            if let Some(ref mut buffer) = *buffer_guard {
+                // Resize if necessary
+                let expected_size = (width * height * 4) as usize;
+                if buffer.data.len() != expected_size {
+                    buffer.data.resize(expected_size, 0);
+                    buffer.width = width;
+                    buffer.height = height;
+                }
+                // Copy frame data
+                let copy_len = std::cmp::min(data.len(), buffer.data.len());
+                buffer.data[..copy_len].copy_from_slice(&data[..copy_len]);
+                buffer.frame_count.fetch_add(1, Ordering::Relaxed);
+                true
+            } else {
+                debug!("Global frame buffer not initialized");
+                false
             }
-            // Copy frame data
-            let copy_len = std::cmp::min(data.len(), buffer.data.len());
-            buffer.data[..copy_len].copy_from_slice(&data[..copy_len]);
-            buffer.frame_count.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(e) => {
+            warn!("Failed to lock global frame buffer for writing: {}", e);
+            false
         }
     }
 }
