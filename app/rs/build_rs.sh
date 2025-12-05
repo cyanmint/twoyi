@@ -1,4 +1,5 @@
 #! /bin/bash
+set -e
 
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
@@ -33,3 +34,4 @@ mkdir -p ../src/main/jniLibs/arm64-v8a
 cp target/aarch64-linux-android/${BUILD_DIR}/twoyi ../src/main/jniLibs/arm64-v8a/libtwoyi.so
 
 echo "Built libtwoyi.so in ../src/main/jniLibs/arm64-v8a/"
+ls -la ../src/main/jniLibs/arm64-v8a/libtwoyi.so

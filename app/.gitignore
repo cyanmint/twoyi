@@ -1,5 +1,5 @@
 /build
 rootfs.*
 /release/
-libtwoyi.so
 rom.ini
+# libtwoyi.so in jniLibs is built dynamically by cargoBuild task
