@@ -1,3 +1,0 @@
-[submodule "app/src/main/cpp/anbox"]
-	path = app/src/main/cpp/anbox
-	url = https://github.com/Ananbox/anbox.git
