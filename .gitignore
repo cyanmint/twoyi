@@ -14,3 +14,7 @@
 .cxx
 local.properties
 dl.sh
+
+# CMake build artifacts for FOSS renderer
+/app/src/main/cpp/build/
+/app/src/main/cpp/cmake-build-*/
