@@ -68,7 +68,7 @@ int removeSubWindow(void* window) {
 } // extern "C"
 
 // Note on integration with android-emugl:
-// The anbox/external/android-emugl directory contains the full FOSS renderer.
+// The app/src/main/cpp/anbox/external/android-emugl directory contains the full FOSS renderer.
 // To complete the integration:
 // 1. Build the required android-emugl libraries (GLESv1_dec, GLESv2_dec, etc.)
 // 2. Link them into this wrapper via build.rs
