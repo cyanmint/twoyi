@@ -241,6 +241,17 @@ Threetwi contains two parts:
 
 This repository contains the threetwi app, and the threetwi ROM is currently being turned into open-source.  Therefore, at this moment, the ROM cannot be compiled from source yet.
 
+### FOSS OpenGL Renderer
+
+The repository uses an OpenGL renderer (`libOpenglRender.so`) for graphics rendering. While a prebuilt version is included for convenience, **a fully open-source FOSS alternative can be built from source** using the android-emugl implementation from the [Ananbox project](https://github.com/Ananbox/ananbox).
+
+This FOSS renderer is based on:
+- **android-emugl**: The Android Emulator OpenGL ES translation layer from the Android Open Source Project (AOSP)
+- **Apache License 2.0**: Fully transparent and modifiable open source code
+- **Ananbox integration**: Optimized for container-based Android systems
+
+See the build instructions below for how to compile the FOSS renderer from source.
+
 ### Build the App manually
 
 #### Install Rust
@@ -254,6 +265,19 @@ Please refer to [cargo-xdk](https://github.com/tiann/cargo-xdk).
 You can check if it is installed by running `./gradlew cargoBuild`. If it succeeded, you will see libtwoyi.so in `app/src/main/jniLibs/arm64-v8a`.
 
 PS. Please use ndk v22 or lower, otherwise it may fail.
+
+#### OpenGL Renderer (Optional: FOSS Build)
+
+The repository includes a prebuilt `libOpenglRender.so` for convenience. However, you can build the **FOSS (Free and Open Source Software) version** from source using the android-emugl implementation from [Ananbox](https://github.com/Ananbox/ananbox):
+
+```bash
+cd app/src/main/cpp
+./build_foss_renderer.sh
+```
+
+For detailed instructions, see [docs/BUILD_FOSS_RENDERER.md](docs/BUILD_FOSS_RENDERER.md).
+
+**Note:** The FOSS renderer is based on the Apache 2.0 licensed android-emugl from the Android Open Source Project (AOSP), as integrated by the Ananbox project.
 
 #### Integrating rootfs
 
