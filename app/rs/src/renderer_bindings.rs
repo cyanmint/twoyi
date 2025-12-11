@@ -4,11 +4,8 @@
 //! Direct FFI bindings to FOSS OpenGL renderer functions
 //!
 //! These functions are now statically linked into libtwoyi.so (built from
-//! FOSS android-emugl sources) instead of being dynamically loaded via dlopen.
-//! This eliminates the dependency on the proprietary libOpenglRender.so binary.
-//!
-//! The renderer functions are provided by renderer_wrapper.cpp which is compiled
-//! and linked into libtwoyi.so via build.rs
+//! FOSS sources using native Android EGL/GLES) instead of being dynamically
+//! loaded via dlopen. This eliminates the dependency on any proprietary library.
 
 use std::os::raw::{c_int, c_void};
 use log::info;
@@ -16,7 +13,7 @@ use log::info;
 /// Initialize the OpenGL renderer library bindings
 /// Returns true (renderer is always available since it's embedded)
 pub fn init_renderer() -> bool {
-    info!("FOSS OpenGL renderer is embedded in libtwoyi.so");
+    info!("FOSS OpenGL renderer is embedded in libtwoyi.so (using native Android EGL/GLES)");
     true
 }
 
