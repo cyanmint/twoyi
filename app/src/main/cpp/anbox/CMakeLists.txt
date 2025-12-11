@@ -1,0 +1,7 @@
+project(ananbox)
+cmake_minimum_required (VERSION 2.8.7)
+find_package(Boost COMPONENTS filesystem log serialization system thread program_options)
+find_package(PkgConfig)
+find_package(Threads)
+add_subdirectory(external)
+add_subdirectory(src)

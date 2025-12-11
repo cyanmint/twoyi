@@ -1,0 +1,26 @@
+syntax = "proto2";
+option optimize_for = LITE_RUNTIME;
+
+package anbox.protobuf.container;
+
+message Configuration {
+    message BindMount {
+        required string source = 1;
+        required string target = 2;
+    }
+    message Devices {
+        required string path = 1;
+        required uint32 permission = 2;
+    }
+    repeated BindMount bind_mounts = 1;
+    repeated Devices devices = 2;
+    repeated string extra_properties = 3;
+}
+
+message StartContainer {
+    required Configuration configuration = 1;
+}
+
+message StopContainer {
+    optional bool force = 1;
+}
