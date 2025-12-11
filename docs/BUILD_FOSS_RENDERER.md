@@ -2,6 +2,22 @@
 
 This document explains how to build `libOpenglRender.so` from source using the FOSS android-emugl implementation from the Ananbox project, instead of using the prebuilt binary.
 
+## ⚠️ Implementation Status
+
+This is a **foundational framework** for building a FOSS renderer. The current implementation provides:
+- ✅ Build infrastructure (CMake, scripts, CI/CD)
+- ✅ Anbox submodule integration  
+- ✅ Comprehensive documentation
+- ⚠️ **Template wrapper code** that needs adaptation
+
+**Next Steps Required:**
+1. Study the anbox/android-emugl API structure
+2. Adapt the wrapper functions to match the actual anbox implementation
+3. Test thoroughly with the existing ROM and Rust code
+4. Verify function signatures match those expected by `renderer_bindings.rs`
+
+See the Ananbox project for a working reference: https://github.com/Ananbox/ananbox
+
 ## Background
 
 The original twoyi project includes a prebuilt `libOpenglRender.so` library that is not built from source. This document provides instructions for building a FOSS (Free and Open Source Software) version of this renderer using the android-emugl library from the Anbox project.
@@ -126,9 +142,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math")
 ## References
 
 - [Ananbox Project](https://github.com/Ananbox/ananbox) - FOSS Android container
-- [Anbox Fork](https://github.com/Ananbox/anbox) - Contains the android-emugl implementation
+- [Anbox Fork by Ananbox](https://github.com/Ananbox/anbox) - Contains the android-emugl implementation
 - [Android Emulator GL](https://android.googlesource.com/platform/external/qemu/) - Original AOSP implementation
-- [Anbox Project](https://github.com/anbox/anbox) - Original Anbox project
+- [Original Anbox Project](https://github.com/anbox/anbox) - Original Anbox project
 
 ## License
 

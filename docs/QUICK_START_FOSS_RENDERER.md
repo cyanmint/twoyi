@@ -2,6 +2,12 @@
 
 This guide helps you quickly get started with building and using the FOSS (Free and Open Source) OpenGL renderer instead of the prebuilt binary.
 
+## ⚠️ Current Status
+
+This is a **foundational framework** for building a FOSS renderer. The infrastructure is ready, but the wrapper code needs to be adapted to the actual anbox API. See [BUILD_FOSS_RENDERER.md](BUILD_FOSS_RENDERER.md) for details.
+
+**For Developers:** This provides the build system and documentation. Additional work is needed to integrate with the anbox/android-emugl API.
+
 ## Why Use the FOSS Renderer?
 
 - ✅ **100% Open Source**: Apache 2.0 licensed code from AOSP

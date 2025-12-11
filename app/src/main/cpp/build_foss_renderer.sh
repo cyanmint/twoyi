@@ -70,7 +70,7 @@ cmake .. \
 
 # Build
 echo "Building..."
-cmake --build . --target OpenglRender --config "$BUILD_TYPE" -- -j$(nproc)
+cmake --build . --target OpenglRender --config "$BUILD_TYPE" -- -j$(nproc --ignore=1 2>/dev/null || echo 4)
 
 # Check if library was built
 if [ -f "libOpenglRender.so" ]; then
