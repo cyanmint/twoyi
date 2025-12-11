@@ -241,6 +241,35 @@ Threetwi contains two parts:
 
 This repository contains the threetwi app, and the threetwi ROM is currently being turned into open-source.  Therefore, at this moment, the ROM cannot be compiled from source yet.
 
+### FOSS OpenGL Renderer
+
+The renderer now uses a **fully vendored FOSS implementation** built directly into `libtwoyi.so`.
+
+### What Changed
+
+- **Vendored Sources**: The anbox/android-emugl source code is now included directly in the repository (no git submodule)
+- **No Prebuilt Binary**: The proprietary `libOpenglRender.so` has been removed
+- **Embedded in libtwoyi.so**: The FOSS renderer is statically linked into the main server binary
+- **100% FOSS**: All components except `libloader.so` are now fully open source
+
+### Implementation
+
+The FOSS renderer is based on:
+- **android-emugl**: The Android Emulator OpenGL ES translation layer from AOSP
+- **Apache License 2.0**: Fully transparent and modifiable open source code
+- **Vendored**: Source code included directly at `app/src/main/cpp/anbox/`
+- **Static Linking**: Built into `libtwoyi.so` via the Rust build system (build.rs)
+
+### Building
+
+The renderer is automatically built as part of the normal build process:
+
+```bash
+./gradlew cargoBuild
+```
+
+No separate build steps required - the renderer functions are compiled and linked directly into `libtwoyi.so`.
+
 ### Build the App manually
 
 #### Install Rust
@@ -254,6 +283,19 @@ Please refer to [cargo-xdk](https://github.com/tiann/cargo-xdk).
 You can check if it is installed by running `./gradlew cargoBuild`. If it succeeded, you will see libtwoyi.so in `app/src/main/jniLibs/arm64-v8a`.
 
 PS. Please use ndk v22 or lower, otherwise it may fail.
+
+#### OpenGL Renderer (Optional: FOSS Build)
+
+The repository includes a prebuilt `libOpenglRender.so` for convenience. However, you can build the **FOSS (Free and Open Source Software) version** from source using the android-emugl implementation from [Ananbox](https://github.com/Ananbox/ananbox):
+
+```bash
+cd app/src/main/cpp
+./build_foss_renderer.sh
+```
+
+For detailed instructions, see [docs/BUILD_FOSS_RENDERER.md](docs/BUILD_FOSS_RENDERER.md).
+
+**Note:** The FOSS renderer is based on the Apache 2.0 licensed android-emugl from the Android Open Source Project (AOSP), as integrated by the Ananbox project.
 
 #### Integrating rootfs
 
