@@ -37,8 +37,9 @@ extern "C" {
 
 // Export the OpenGL renderer functions that are expected by the Rust code
 // These match the function signatures in app/rs/src/renderer_bindings.rs
+// Using plain C calling convention (not JNI) for dlopen/dlsym compatibility
 
-JNIEXPORT jint JNICALL destroyOpenGLSubwindow() {
+int destroyOpenGLSubwindow() {
     LOGI("destroyOpenGLSubwindow called");
     // TODO: Call the anbox implementation
     // return anbox::graphics::emugl::destroyOpenGLSubwindow();
@@ -46,14 +47,14 @@ JNIEXPORT jint JNICALL destroyOpenGLSubwindow() {
     return -1;
 }
 
-JNIEXPORT void JNICALL repaintOpenGLDisplay() {
+void repaintOpenGLDisplay() {
     LOGI("repaintOpenGLDisplay called");
     // TODO: Call the anbox implementation
     // anbox::graphics::emugl::repaintOpenGLDisplay();
     LOGE("repaintOpenGLDisplay: NOT IMPLEMENTED - needs anbox API integration");
 }
 
-JNIEXPORT jint JNICALL setNativeWindow(void* window) {
+int setNativeWindow(void* window) {
     LOGI("setNativeWindow called");
     // TODO: Call the anbox implementation
     // return anbox::graphics::emugl::setNativeWindow(window);
@@ -61,7 +62,7 @@ JNIEXPORT jint JNICALL setNativeWindow(void* window) {
     return -1;
 }
 
-JNIEXPORT jint JNICALL resetSubWindow(
+int resetSubWindow(
     void* p_window,
     int wx, int wy, int ww, int wh,
     int fbw, int fbh,
@@ -74,7 +75,7 @@ JNIEXPORT jint JNICALL resetSubWindow(
     return -1;
 }
 
-JNIEXPORT jint JNICALL startOpenGLRenderer(
+int startOpenGLRenderer(
     void* win,
     int width, int height,
     int xdpi, int ydpi, int fps) {
@@ -86,7 +87,7 @@ JNIEXPORT jint JNICALL startOpenGLRenderer(
     return -1;
 }
 
-JNIEXPORT jint JNICALL removeSubWindow(void* window) {
+int removeSubWindow(void* window) {
     LOGI("removeSubWindow called");
     // TODO: Call the anbox implementation
     // return anbox::graphics::emugl::removeSubWindow(window);
