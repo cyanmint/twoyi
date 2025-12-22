@@ -6,17 +6,18 @@
 
 package io.twoyi.utils;
 
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.res.AssetManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Process;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
-import com.hzy.libp7zip.P7ZipApi;
 import com.topjohnwu.superuser.Shell;
 
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
@@ -292,10 +293,41 @@ public final class RomManager {
     }
 
     public static int extractRootfs(Context context, File rootfs7z) {
+        try {
+            File outputDir = context.getDataDir();
+            extract7zFile(rootfs7z, outputDir);
+            return 0;
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to extract rootfs", e);
+            return 1;
+        }
+    }
 
-        int cpu = Runtime.getRuntime().availableProcessors();
-        return P7ZipApi.executeCommand(String.format(Locale.US, "7z x -mmt=%d -aoa '%s' '-o%s'",
-                cpu, rootfs7z, context.getDataDir()));
+    private static void extract7zFile(File archive, File outputDir) throws IOException {
+        try (SevenZFile sevenZFile = new SevenZFile(archive)) {
+            SevenZArchiveEntry entry;
+            while ((entry = sevenZFile.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    File dir = new File(outputDir, entry.getName());
+                    ensureDir(dir);
+                    continue;
+                }
+                
+                File outFile = new File(outputDir, entry.getName());
+                File parent = outFile.getParentFile();
+                if (parent != null) {
+                    ensureDir(parent);
+                }
+                
+                try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                    byte[] buffer = new byte[8192];
+                    int n;
+                    while ((n = sevenZFile.read(buffer)) > 0) {
+                        fos.write(buffer, 0, n);
+                    }
+                }
+            }
+        }
     }
 
     public static boolean extractRootfsInAssets(Context context) {
@@ -455,7 +487,7 @@ public final class RomManager {
              TarArchiveInputStream tarIn = new TarArchiveInputStream(gzipIn)) {
             
             TarArchiveEntry entry;
-            while ((entry = tarIn.getNextEntry()) != null) {
+            while ((entry = (TarArchiveEntry) tarIn.getNextEntry()) != null) {
                 String entryName = entry.getName();
                 
                 // Validate entry name to prevent path traversal attacks

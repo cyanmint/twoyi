@@ -293,7 +293,7 @@ public class SettingsActivity extends AppCompatActivity {
             }).done(result -> {
 
                 File rootfs3rd = result.first;
-                RomInfo romInfo = result.second;
+                RomManager.RomInfo romInfo = result.second;
                 UIHelper.dismiss(dialog);
 
                 // copy finished, show dialog confirm

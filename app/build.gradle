@@ -89,10 +89,7 @@ dependencies {
     implementation 'org.apache.commons:commons-compress:1.20'
     implementation 'org.tukaani:xz:1.5'
 
-    implementation 'com.hzy:libp7zip:1.7.0'
-//    implementation "com.github.seven332.a7zip:extract:master-SNAPSHOT"
-//    implementation 'com.github.omicronapps:7-Zip-JBinding-4Android:Release-16.02-2.02'
-//    implementation 'com.victor:lib:1.0.4'
+    // libp7zip is no longer needed - using Apache Commons Compress for 7z extraction
     implementation 'com.cleveroad:androidmanimation:0.9.1'
 
     def appCenterSdkVersion = '4.3.1'
