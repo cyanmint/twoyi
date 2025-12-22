@@ -70,6 +70,10 @@ public class LogEvents {
         return new File(context.getDataDir(), "last_kmsg.txt");
     }
 
+    public static File getImportTarLogFile(Context context) {
+        return new File(context.getCacheDir(), "import_tar.log");
+    }
+
     private static class ReportItem {
         File file;
         String entry;
@@ -112,6 +116,12 @@ public class LogEvents {
         } catch (Throwable ignored) {}
 
         reportItems.add(ReportItem.create(logcatFile));
+
+        // import tar log
+        File importTarLog = getImportTarLogFile(context);
+        if (importTarLog.exists()) {
+            reportItems.add(ReportItem.create(importTarLog));
+        }
 
         // tombstones
         File rootfsDir = RomManager.getRootfsDir(context);
