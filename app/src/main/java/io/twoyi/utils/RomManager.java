@@ -504,12 +504,19 @@ public final class RomManager {
                             // Absolute path in tar - need to determine what it refers to
                             String containerPath;
                             
-                            // Check if this is a host-absolute path that includes the rootfs prefix
-                            // e.g., "/data/data/io.twoyi/rootfs/data/data" should become "data/data"
-                            int rootfsIndex = linkName.indexOf(HOST_ROOTFS_PREFIX);
-                            if (rootfsIndex >= 0) {
-                                // Extract the path after the rootfs prefix
+                            // Check if this is a host-absolute path that includes a rootfs prefix
+                            // Could be /data/data/io.twoyi/rootfs/, /data/user/0/io.twoyi/rootfs/, etc.
+                            // We need to extract just the path after "/rootfs/"
+                            int rootfsMarkerIndex = linkName.indexOf("/rootfs/");
+                            if (rootfsMarkerIndex >= 0) {
+                                // Extract the path after the rootfs marker
+                                containerPath = linkName.substring(rootfsMarkerIndex + "/rootfs/".length());
+                                logWriter.write("Symlink (host-abs): " + entry.getName() + " -> " + linkName + " (stripped to: " + containerPath + ")\n");
+                            } else if (linkName.contains(HOST_ROOTFS_PREFIX)) {
+                                // Fallback: check for exact hardcoded prefix (backward compat)
+                                int rootfsIndex = linkName.indexOf(HOST_ROOTFS_PREFIX);
                                 containerPath = linkName.substring(rootfsIndex + HOST_ROOTFS_PREFIX.length());
+                                logWriter.write("Symlink (host-abs-prefix): " + entry.getName() + " -> " + linkName + " (stripped to: " + containerPath + ")\n");
                             } else {
                                 // Standard container-absolute path like "/sbin/charger"
                                 // This means "rootfs/sbin/charger"
@@ -530,7 +537,7 @@ public final class RomManager {
                                 // a symlink pointing to a path relative to the rootfs directory
                                 linkTarget = Paths.get(containerPath);
                             }
-                            logWriter.write("Symlink (abs->rel): " + entry.getName() + " -> " + linkName + " => " + linkTarget + "\n");
+                            logWriter.write("Symlink (abs->rel): " + entry.getName() + " => " + linkTarget + "\n");
                         } else {
                             // Already relative, use as-is
                             linkTarget = Paths.get(linkName);
