@@ -20,6 +20,12 @@ import android.util.Log;
 
 import com.topjohnwu.superuser.Shell;
 
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
@@ -187,34 +193,30 @@ public final class RomManager {
     }
 
     public static RomInfo getRomInfo(File rom) {
-        File tempDir = null;
         try {
-            // Create temp directory to extract rom.ini
-            tempDir = Files.createTempDirectory("rominfo").toFile();
-            
-            // Extract only rom.ini using system tar
-            Shell shell = ShellUtil.newSh();
-            Shell.Result result = shell.newJob()
-                .add(String.format("tar -xzf '%s' -C '%s' rom.ini 2>/dev/null || true",
-                    rom.getAbsolutePath(),
-                    tempDir.getAbsolutePath()))
-                .exec();
-            
-            // Look for rom.ini in temp directory
-            File romIni = new File(tempDir, "rom.ini");
-            
-            if (romIni.exists()) {
-                try (FileInputStream fis = new FileInputStream(romIni)) {
-                    return getRomInfo(fis);
+            // Extract and read rom.ini using Apache Commons Compress
+            try (FileInputStream fis = new FileInputStream(rom);
+                 GzipCompressorInputStream gzis = new GzipCompressorInputStream(fis);
+                 TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
+                
+                TarArchiveEntry entry;
+                while ((entry = tais.getNextTarEntry()) != null) {
+                    if (entry.getName().equals("rom.ini")) {
+                        // Read rom.ini directly from the tar stream
+                        byte[] content = new byte[(int) entry.getSize()];
+                        int totalRead = 0;
+                        while (totalRead < content.length) {
+                            int read = tais.read(content, totalRead, content.length - totalRead);
+                            if (read == -1) break;
+                            totalRead += read;
+                        }
+                        ByteArrayInputStream bais = new ByteArrayInputStream(content);
+                        return getRomInfo(bais);
+                    }
                 }
             }
         } catch (Throwable e) {
             LogEvents.trackError(e);
-        } finally {
-            // Clean up temp directory
-            if (tempDir != null && tempDir.exists()) {
-                IOUtils.deleteDirectory(tempDir);
-            }
         }
         return DEFAULT_ROM_INFO;
     }
@@ -294,18 +296,49 @@ public final class RomManager {
     private static void extractTarballToDataDir(Context context, File tarballFile) throws IOException {
         File outputDir = context.getDataDir();
         
-        // Use system tar command for extraction (preserves symlinks and permissions)
-        // cd into output directory and extract archive there
-        Shell shell = ShellUtil.newSh();
-        Shell.Result result = shell.newJob()
-            .add(String.format("cd '%s' && tar xzf '%s'", 
-                outputDir.getAbsolutePath(),
-                tarballFile.getAbsolutePath()))
-            .exec();
-        
-        if (!result.isSuccess()) {
-            String errorMsg = result.getErr().isEmpty() ? "Unknown error" : String.join("\n", result.getErr());
-            throw new IOException("tar extraction failed: " + errorMsg);
+        // Use Apache Commons Compress to extract tar.gz archive
+        try (FileInputStream fis = new FileInputStream(tarballFile);
+             GzipCompressorInputStream gzis = new GzipCompressorInputStream(fis);
+             TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
+            
+            TarArchiveEntry entry;
+            while ((entry = tais.getNextTarEntry()) != null) {
+                File outputFile = new File(outputDir, entry.getName());
+                
+                if (entry.isDirectory()) {
+                    ensureDir(outputFile);
+                } else if (entry.isSymbolicLink()) {
+                    // Handle symbolic links
+                    String linkName = entry.getLinkName();
+                    try {
+                        Files.createSymbolicLink(outputFile.toPath(), Paths.get(linkName));
+                    } catch (IOException e) {
+                        Log.w(TAG, "Failed to create symlink: " + entry.getName() + " -> " + linkName, e);
+                    }
+                } else {
+                    // Regular file
+                    File parent = outputFile.getParentFile();
+                    if (parent != null) {
+                        ensureDir(parent);
+                    }
+                    
+                    try (FileOutputStream outputStream = new FileOutputStream(outputFile)) {
+                        byte[] buffer = new byte[8192];
+                        int count;
+                        while ((count = tais.read(buffer)) > 0) {
+                            outputStream.write(buffer, 0, count);
+                        }
+                    }
+                    
+                    // Set file permissions
+                    int mode = entry.getMode();
+                    if (mode != 0) {
+                        outputFile.setExecutable((mode & 0100) != 0, false);
+                        outputFile.setReadable((mode & 0400) != 0, false);
+                        outputFile.setWritable((mode & 0200) != 0, false);
+                    }
+                }
+            }
         }
     }
 
@@ -377,21 +410,19 @@ public final class RomManager {
     public static void exportRootfsToTarball(Context context, Uri outputUri) throws IOException {
         File rootfsDir = getRootfsDir(context);
         
-        // Create a temporary tarball using system tar (preserves symlinks and permissions)
+        // Create a temporary tarball using Apache Commons Compress (preserves symlinks and permissions)
         File tempTar = new File(context.getCacheDir(), "rom.tar.gz");
         try {
-            // Use system tar to create archive with all files including symlinks
-            // cd into rootfs directory and archive all contents using *
-            Shell shell = ShellUtil.newSh();
-            Shell.Result result = shell.newJob()
-                .add(String.format("cd '%s' && tar czf '%s' *", 
-                    rootfsDir.getAbsolutePath(),
-                    tempTar.getAbsolutePath()))
-                .exec();
-            
-            if (!result.isSuccess()) {
-                String errorMsg = result.getErr().isEmpty() ? "Unknown error" : String.join("\n", result.getErr());
-                throw new IOException("tar creation failed: " + errorMsg);
+            // Use Apache Commons Compress to create tar.gz archive
+            try (FileOutputStream fos = new FileOutputStream(tempTar);
+                 GzipCompressorOutputStream gzos = new GzipCompressorOutputStream(fos);
+                 TarArchiveOutputStream taos = new TarArchiveOutputStream(gzos)) {
+                
+                taos.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
+                taos.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX);
+                
+                // Recursively add all files from rootfs directory
+                addFilesToTarGz(rootfsDir, "", taos);
             }
             
             // Copy the temp tarball to the output URI
@@ -409,6 +440,35 @@ public final class RomManager {
             if (tempTar.exists()) {
                 tempTar.delete();
             }
+        }
+    }
+    
+    private static void addFilesToTarGz(File file, String parent, TarArchiveOutputStream taos) throws IOException {
+        String entryName = parent + file.getName();
+        
+        TarArchiveEntry tarEntry = new TarArchiveEntry(file, entryName);
+        taos.putArchiveEntry(tarEntry);
+        
+        if (file.isFile()) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = fis.read(buffer)) > 0) {
+                    taos.write(buffer, 0, count);
+                }
+            }
+            taos.closeArchiveEntry();
+        } else if (file.isDirectory()) {
+            taos.closeArchiveEntry();
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    addFilesToTarGz(child, entryName + "/", taos);
+                }
+            }
+        } else {
+            // Handle symlinks and other special files
+            taos.closeArchiveEntry();
         }
     }
 
@@ -433,18 +493,49 @@ public final class RomManager {
             IOUtils.deleteDirectory(rootfsDir);
             ensureDir(rootfsDir);
             
-            // Use system tar to extract (preserves symlinks and permissions)
-            // cd into rootfs directory and extract archive there
-            Shell shell = ShellUtil.newSh();
-            Shell.Result result = shell.newJob()
-                .add(String.format("cd '%s' && tar xzf '%s'", 
-                    rootfsDir.getAbsolutePath(),
-                    tempTar.getAbsolutePath()))
-                .exec();
-            
-            if (!result.isSuccess()) {
-                String errorMsg = result.getErr().isEmpty() ? "Unknown error" : String.join("\n", result.getErr());
-                throw new IOException("tar extraction failed: " + errorMsg);
+            // Use Apache Commons Compress to extract tar.gz archive
+            try (FileInputStream fis = new FileInputStream(tempTar);
+                 GzipCompressorInputStream gzis = new GzipCompressorInputStream(fis);
+                 TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
+                
+                TarArchiveEntry entry;
+                while ((entry = tais.getNextTarEntry()) != null) {
+                    File outputFile = new File(rootfsDir, entry.getName());
+                    
+                    if (entry.isDirectory()) {
+                        ensureDir(outputFile);
+                    } else if (entry.isSymbolicLink()) {
+                        // Handle symbolic links
+                        String linkName = entry.getLinkName();
+                        try {
+                            Files.createSymbolicLink(outputFile.toPath(), Paths.get(linkName));
+                        } catch (IOException e) {
+                            Log.w(TAG, "Failed to create symlink: " + entry.getName() + " -> " + linkName, e);
+                        }
+                    } else {
+                        // Regular file
+                        File parent = outputFile.getParentFile();
+                        if (parent != null) {
+                            ensureDir(parent);
+                        }
+                        
+                        try (FileOutputStream outputStream = new FileOutputStream(outputFile)) {
+                            byte[] buffer = new byte[8192];
+                            int count;
+                            while ((count = tais.read(buffer)) > 0) {
+                                outputStream.write(buffer, 0, count);
+                            }
+                        }
+                        
+                        // Set file permissions
+                        int mode = entry.getMode();
+                        if (mode != 0) {
+                            outputFile.setExecutable((mode & 0100) != 0, false);
+                            outputFile.setReadable((mode & 0400) != 0, false);
+                            outputFile.setWritable((mode & 0200) != 0, false);
+                        }
+                    }
+                }
             }
         } finally {
             // Clean up temp file
