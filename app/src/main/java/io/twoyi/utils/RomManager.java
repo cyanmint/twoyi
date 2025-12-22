@@ -307,13 +307,30 @@ public final class RomManager {
         try (SevenZFile sevenZFile = new SevenZFile(archive)) {
             SevenZArchiveEntry entry;
             while ((entry = sevenZFile.getNextEntry()) != null) {
+                String entryName = entry.getName();
+                
+                // Validate entry name to prevent path traversal attacks
+                if (entryName.contains("..") || entryName.startsWith("/") || new File(entryName).isAbsolute()) {
+                    Log.w(TAG, "Skipping potentially malicious 7z entry: " + entryName);
+                    continue;
+                }
+                
                 if (entry.isDirectory()) {
-                    File dir = new File(outputDir, entry.getName());
+                    File dir = new File(outputDir, entryName);
                     ensureDir(dir);
                     continue;
                 }
                 
-                File outFile = new File(outputDir, entry.getName());
+                File outFile = new File(outputDir, entryName);
+                
+                // Double-check that the resolved path is within output directory
+                String canonicalOutput = outFile.getCanonicalPath();
+                String canonicalOutputDir = outputDir.getCanonicalPath();
+                if (!canonicalOutput.startsWith(canonicalOutputDir + File.separator) && !canonicalOutput.equals(canonicalOutputDir)) {
+                    Log.w(TAG, "Skipping 7z entry outside output directory: " + entryName);
+                    continue;
+                }
+                
                 File parent = outFile.getParentFile();
                 if (parent != null) {
                     ensureDir(parent);
