@@ -102,14 +102,14 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
         Log.i(TAG, "onCreate: " + savedInstanceState + " isStarted: " + started);
 
         if (started) {
-            // we have been started, but WTF we are onCreate again? just reboot ourself.
-            finish();
-            RomManager.reboot(this);
-            return;
+            // Container already running, just show it
+            // Don't reboot, keep the container running
+            Log.i(TAG, "Container already started, resuming");
+            // UI will be restored via surfaceCreated callback
+        } else {
+            // reset state
+            TwoyiStatusManager.getInstance().reset();
         }
-
-        // reset state
-        TwoyiStatusManager.getInstance().reset();
 
         NavUtils.hideNavigation(getWindow());
 
@@ -126,13 +126,18 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
         mLoadingText = findViewById(R.id.loadingText);
         mBootLogView = findViewById(R.id.bootlog);
 
-        mLoadingLayout.setVisibility(View.VISIBLE);
-        mLoadingView.startAnimation();
-
-        UITips.checkForAndroid12(this, this::bootSystem);
-
         mSurfaceView.setOnTouchListener(this);
 
+        if (!started) {
+            // Only show loading and boot if not already started
+            mLoadingLayout.setVisibility(View.VISIBLE);
+            mLoadingView.startAnimation();
+            UITips.checkForAndroid12(this, this::bootSystem);
+        } else {
+            // Already booted, just add surface view and hide loading
+            mRootView.addView(mSurfaceView, 0);
+            mLoadingLayout.setVisibility(View.GONE);
+        }
     }
 
     @Override

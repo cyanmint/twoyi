@@ -6,21 +6,25 @@
 
 package io.twoyi.utils;
 
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.res.AssetManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Process;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
-import com.hzy.libp7zip.P7ZipApi;
 import com.topjohnwu.superuser.Shell;
 
-import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
-import org.apache.commons.compress.archivers.sevenz.SevenZFile;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -50,15 +54,20 @@ public final class RomManager {
 
     private static final String TAG = "RomManager";
 
-    private static final String ROOTFS_NAME = "rootfs.7z";
-
     private static final String ROM_INFO_FILE = "rom.ini";
 
     private static final String DEFAULT_INFO = "unknown";
 
     private static final String LOADER_FILE = "libloader.so";
 
-    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.7z";
+    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.tar.gz";
+    
+    // File permission constants for tar archive extraction
+    // Using octal notation for POSIX file permissions (standard Java octal prefix is 0)
+    // These constants match the standard Unix permission bits:
+    private static final int OWNER_EXECUTE = 0100;  // Octal 0100 = decimal 64  = S_IXUSR (owner execute)
+    private static final int OWNER_READ = 0400;     // Octal 0400 = decimal 256 = S_IRUSR (owner read)
+    private static final int OWNER_WRITE = 0200;    // Octal 0200 = decimal 128 = S_IWUSR (owner write)
 
     private RomManager() {
     }
@@ -184,16 +193,26 @@ public final class RomManager {
     }
 
     public static RomInfo getRomInfo(File rom) {
-        try (SevenZFile zFile = new SevenZFile(rom)) {
-
-            SevenZArchiveEntry entry;
-
-            while ((entry = zFile.getNextEntry()) != null) {
-                if (entry.getName().equals("rootfs/rom.ini")) {
-                    byte[] content = new byte[(int) entry.getSize()];
-                    zFile.read(content, 0, content.length);
-                    ByteArrayInputStream bais = new ByteArrayInputStream(content);
-                    return getRomInfo(bais);
+        try {
+            // Extract and read rom.ini using Apache Commons Compress
+            try (FileInputStream fis = new FileInputStream(rom);
+                 GzipCompressorInputStream gzis = new GzipCompressorInputStream(fis);
+                 TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
+                
+                TarArchiveEntry entry;
+                while ((entry = tais.getNextTarEntry()) != null) {
+                    if (entry.getName().equals("rom.ini")) {
+                        // Read rom.ini directly from the tar stream
+                        byte[] content = new byte[(int) entry.getSize()];
+                        int totalRead = 0;
+                        while (totalRead < content.length) {
+                            int read = tais.read(content, totalRead, content.length - totalRead);
+                            if (read == -1) break;
+                            totalRead += read;
+                        }
+                        ByteArrayInputStream bais = new ByteArrayInputStream(content);
+                        return getRomInfo(bais);
+                    }
                 }
             }
         } catch (Throwable e) {
@@ -218,40 +237,30 @@ public final class RomManager {
         removeVendorPartition(context);
 
         if (!romExist) {
-            // first init
-            extractRootfsInAssets(context);
+            // No bundled rootfs - user must import via tarball
+            Log.i(TAG, "No rootfs found. User must import rootfs tarball.");
             return;
         }
 
         if (forceInstall) {
             if (use3rdRom) {
-                // install 3rd rom
+                // install 3rd rom from imported tarball
                 boolean success = extract3rdRootfs(context);
                 if (!success) {
                     showRootfsInstallationFailure(context);
                     return;
                 }
             } else {
-                // factory reset!!
-                if (!extractRootfsInAssets(context)) {
-                    showRootfsInstallationFailure(context);
-                    return;
-                }
+                // factory reset - no bundled rootfs available
+                Log.w(TAG, "Factory reset requested but no bundled rootfs available");
+                showRootfsInstallationFailure(context);
+                return;
             }
 
             // force install finish, reset the state.
             AppKV.setBooleanConfig(context, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
-        } else {
-            if (use3rdRom) {
-                Log.w(TAG, "WTF? 3rd ROM must be force install!");
-            }
-            if (needsUpgrade) {
-                Log.i(TAG, "upgrade factory rom..");
-                if (!extractRootfsInAssets(context)) {
-                    showRootfsInstallationFailure(context);
-                }
-            }
         }
+        // No automatic upgrades since there's no bundled rootfs
     }
 
     private static void showRootfsInstallationFailure(Context context) {
@@ -275,41 +284,19 @@ public final class RomManager {
         if (!rootfs3rd.exists()) {
             return false;
         }
-        int err = extractRootfs(context, rootfs3rd);
-        return err == 0;
-    }
-
-    public static int extractRootfs(Context context, File rootfs7z) {
-
-        int cpu = Runtime.getRuntime().availableProcessors();
-        return P7ZipApi.executeCommand(String.format(Locale.US, "7z x -mmt=%d -aoa '%s' '-o%s'",
-                cpu, rootfs7z, context.getDataDir()));
-    }
-
-    public static boolean extractRootfsInAssets(Context context) {
-
-        // read assets
-        long t1 = SystemClock.elapsedRealtime();
-        File rootfs7z = context.getFileStreamPath(ROOTFS_NAME);
-        try (InputStream inputStream = new BufferedInputStream(context.getAssets().open(ROOTFS_NAME));
-             OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfs7z))) {
-            byte[] buffer = new byte[10240];
-            int count;
-            while ((count = inputStream.read(buffer)) > 0) {
-                os.write(buffer, 0, count);
-            }
+        try {
+            extractTarballToDataDir(context, rootfs3rd);
+            return true;
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Failed to extract 3rd rootfs", e);
+            return false;
         }
-        long t2 = SystemClock.elapsedRealtime();
+    }
 
-        int ret = extractRootfs(context, rootfs7z);
-
-        long t3 = SystemClock.elapsedRealtime();
-
-        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " un7z: " + (t3 - t2) + "ret: " + ret);
-
-        return ret == 0;
+    private static void extractTarballToDataDir(Context context, File tarballFile) throws IOException {
+        // This method is deprecated - use importRootfsFromTarball instead
+        // Kept for compatibility, simply delegates to importRootfsFromTarball
+        importRootfsFromTarball(context, Uri.fromFile(tarballFile));
     }
 
     public static File getRootfsDir(Context context) {
@@ -375,5 +362,221 @@ public final class RomManager {
         }
         //noinspection ResultOfMethodCallIgnored
         file.mkdirs();
+    }
+
+    public static void exportRootfsToTarball(Context context, Uri outputUri) throws IOException {
+        File rootfsDir = getRootfsDir(context);
+        
+        // Create a temporary tarball using Apache Commons Compress (preserves symlinks and permissions)
+        File tempTar = new File(context.getCacheDir(), "rom.tar.gz");
+        try {
+            // Use Apache Commons Compress to create tar.gz archive
+            try (FileOutputStream fos = new FileOutputStream(tempTar);
+                 GzipCompressorOutputStream gzos = new GzipCompressorOutputStream(fos);
+                 TarArchiveOutputStream taos = new TarArchiveOutputStream(gzos)) {
+                
+                taos.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
+                taos.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX);
+                
+                // Recursively add all files from rootfs directory
+                addFilesToTarGz(rootfsDir, "", taos);
+            }
+            
+            // Copy the temp tarball to the output URI
+            ContentResolver contentResolver = context.getContentResolver();
+            try (FileInputStream fis = new FileInputStream(tempTar);
+                 OutputStream outputStream = contentResolver.openOutputStream(outputUri)) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = fis.read(buffer)) > 0) {
+                    outputStream.write(buffer, 0, count);
+                }
+            }
+        } finally {
+            // Clean up temp file
+            if (tempTar.exists()) {
+                tempTar.delete();
+            }
+        }
+    }
+    
+    private static void addFilesToTarGz(File file, String parent, TarArchiveOutputStream taos) throws IOException {
+        String entryName = parent + file.getName();
+        
+        // Check if it's a symbolic link
+        Path filePath = file.toPath();
+        if (Files.isSymbolicLink(filePath)) {
+            // Handle symbolic links - preserve them with relative paths
+            Path linkTarget = Files.readSymbolicLink(filePath);
+            TarArchiveEntry tarEntry = new TarArchiveEntry(entryName, TarArchiveEntry.LF_SYMLINK);
+            // Store the link target as-is (should already be relative)
+            tarEntry.setLinkName(linkTarget.toString());
+            taos.putArchiveEntry(tarEntry);
+            taos.closeArchiveEntry();
+        } else if (file.isFile()) {
+            TarArchiveEntry tarEntry = new TarArchiveEntry(file, entryName);
+            taos.putArchiveEntry(tarEntry);
+            try (FileInputStream fis = new FileInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = fis.read(buffer)) > 0) {
+                    taos.write(buffer, 0, count);
+                }
+            }
+            taos.closeArchiveEntry();
+        } else if (file.isDirectory()) {
+            TarArchiveEntry tarEntry = new TarArchiveEntry(file, entryName);
+            taos.putArchiveEntry(tarEntry);
+            taos.closeArchiveEntry();
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    addFilesToTarGz(child, entryName + "/", taos);
+                }
+            }
+        }
+    }
+
+    public static void importRootfsFromTarball(Context context, Uri inputUri) throws IOException {
+        File rootfsDir = getRootfsDir(context);
+        File importLog = new File(context.getCacheDir(), "import_tar.log");
+        
+        // Create a temporary tarball from the input URI in cache directory
+        File tempTar = new File(context.getCacheDir(), "rom.tar.gz");
+        try (FileWriter logWriter = new FileWriter(importLog)) {
+            logWriter.write("=== Rootfs Import Log ===\n");
+            logWriter.write("Timestamp: " + System.currentTimeMillis() + "\n");
+            logWriter.write("Input URI: " + inputUri + "\n\n");
+            
+            // Copy from URI to temp file
+            if ("file".equals(inputUri.getScheme())) {
+                // Direct file URI - just use the file
+                tempTar = new File(inputUri.getPath());
+                logWriter.write("Using direct file: " + tempTar.getAbsolutePath() + "\n");
+            } else {
+                // Content URI - need to copy
+                ContentResolver contentResolver = context.getContentResolver();
+                try (InputStream inputStream = contentResolver.openInputStream(inputUri);
+                     FileOutputStream fos = new FileOutputStream(tempTar)) {
+                    byte[] buffer = new byte[8192];
+                    int count;
+                    long totalBytes = 0;
+                    while ((count = inputStream.read(buffer)) > 0) {
+                        fos.write(buffer, 0, count);
+                        totalBytes += count;
+                    }
+                    logWriter.write("Copied " + totalBytes + " bytes to temp file\n");
+                }
+            }
+            
+            logWriter.write("Tar file size: " + tempTar.length() + " bytes\n\n");
+            
+            // Remove existing rootfs and create fresh directory
+            logWriter.write("Removing existing rootfs directory...\n");
+            IOUtils.deleteDirectory(rootfsDir);
+            ensureDir(rootfsDir);
+            logWriter.write("Created fresh rootfs directory\n\n");
+            
+            // Use Apache Commons Compress to extract tar.gz archive
+            logWriter.write("=== Extraction Log ===\n");
+            int fileCount = 0, dirCount = 0, symlinkCount = 0;
+            
+            try (FileInputStream fis = new FileInputStream(tempTar);
+                 GzipCompressorInputStream gzis = new GzipCompressorInputStream(fis);
+                 TarArchiveInputStream tais = new TarArchiveInputStream(gzis)) {
+                
+                TarArchiveEntry entry;
+                while ((entry = tais.getNextTarEntry()) != null) {
+                    File outputFile = new File(rootfsDir, entry.getName());
+                    
+                    if (entry.isDirectory()) {
+                        ensureDir(outputFile);
+                        dirCount++;
+                    } else if (entry.isSymbolicLink()) {
+                        // Handle symbolic links - convert absolute container paths to relative
+                        String linkName = entry.getLinkName();
+                        Path linkTarget;
+                        
+                        if (Paths.get(linkName).isAbsolute()) {
+                            // Absolute path in tar refers to path inside container (relative to rootfs)
+                            // e.g., "/sbin/charger" means "rootfs/sbin/charger"
+                            // We need to make it relative from the symlink's location
+                            String containerPath = linkName.startsWith("/") ? linkName.substring(1) : linkName;
+                            
+                            // Get the symlink's parent directory
+                            Path symlinkParent = outputFile.toPath().getParent();
+                            // Get the absolute target path in the rootfs
+                            Path absoluteTarget = rootfsDir.toPath().resolve(containerPath);
+                            
+                            try {
+                                // Make relative path from symlink location to target
+                                linkTarget = symlinkParent.relativize(absoluteTarget);
+                            } catch (IllegalArgumentException e) {
+                                // Fallback: if relativize fails, construct manually
+                                linkTarget = Paths.get(containerPath);
+                            }
+                            logWriter.write("Symlink (abs->rel): " + entry.getName() + " -> " + linkName + " => " + linkTarget + "\n");
+                        } else {
+                            // Already relative, use as-is
+                            linkTarget = Paths.get(linkName);
+                            logWriter.write("Symlink (rel): " + entry.getName() + " -> " + linkTarget + "\n");
+                        }
+                        
+                        try {
+                            // Delete if exists (force restore)
+                            if (Files.exists(outputFile.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                Files.delete(outputFile.toPath());
+                            }
+                            Files.createSymbolicLink(outputFile.toPath(), linkTarget);
+                            symlinkCount++;
+                        } catch (IOException e) {
+                            Log.w(TAG, "Failed to create symlink: " + entry.getName() + " -> " + linkTarget, e);
+                            logWriter.write("ERROR: Failed to create symlink: " + entry.getName() + " -> " + linkTarget + ": " + e.getMessage() + "\n");
+                        }
+                    } else {
+                        // Regular file
+                        File parent = outputFile.getParentFile();
+                        if (parent != null) {
+                            ensureDir(parent);
+                        }
+                        
+                        try (FileOutputStream outputStream = new FileOutputStream(outputFile)) {
+                            byte[] buffer = new byte[8192];
+                            int count;
+                            while ((count = tais.read(buffer)) > 0) {
+                                outputStream.write(buffer, 0, count);
+                            }
+                        }
+                        
+                        // Set file permissions
+                        int mode = entry.getMode();
+                        if (mode != 0) {
+                            outputFile.setExecutable((mode & 0100) != 0, false);
+                            outputFile.setReadable((mode & 0400) != 0, false);
+                            outputFile.setWritable((mode & 0200) != 0, false);
+                        }
+                        fileCount++;
+                    }
+                }
+            }
+            
+            logWriter.write("\n=== Extraction Summary ===\n");
+            logWriter.write("Files extracted: " + fileCount + "\n");
+            logWriter.write("Directories created: " + dirCount + "\n");
+            logWriter.write("Symlinks created: " + symlinkCount + "\n");
+            logWriter.write("Import completed successfully\n");
+            
+        } catch (IOException e) {
+            try (FileWriter logWriter = new FileWriter(importLog, true)) {
+                logWriter.write("\n=== ERROR ===\n");
+                logWriter.write("Import failed: " + e.getMessage() + "\n");
+            } catch (IOException ignored) {}
+            throw e;
+        } finally {
+            // Clean up temp file (only if we created it)
+            if (!"file".equals(inputUri.getScheme()) && tempTar.exists()) {
+                tempTar.delete();
+            }
+        }
     }
 }

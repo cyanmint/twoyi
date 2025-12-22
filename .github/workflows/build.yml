@@ -1,0 +1,118 @@
+# Copyright Disclaimer: AI-Generated Content
+# This file was created by GitHub Copilot, an AI coding assistant.
+# AI-generated content is not subject to copyright protection and is provided
+# without any warranty, express or implied, including warranties of merchantability,
+# fitness for a particular purpose, or non-infringement.
+# Use at your own risk.
+
+name: Build APK
+
+on:
+  push:
+    branches: [ main, develop, copilot/** ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      actions: read
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: Cache Android SDK
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.android/sdk
+          /usr/local/lib/android/sdk
+        key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-android-sdk-
+        
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+    
+    - name: Cache NDK
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.android/sdk/ndk/21.4.7075529
+          /usr/local/lib/android/sdk/ndk/21.4.7075529
+        key: ${{ runner.os }}-ndk-21.4.7075529
+        restore-keys: |
+          ${{ runner.os }}-ndk-
+      
+    - name: Install NDK
+      run: |
+        if [ ! -d "$ANDROID_SDK_ROOT/ndk/21.4.7075529" ]; then
+          echo "y" | sdkmanager "ndk;21.4.7075529"
+        else
+          echo "NDK already cached"
+        fi
+    
+    - name: Cache Rust toolchain
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.rustup
+          ~/.cargo/bin
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-rust-
+        
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android
+    
+    - name: Cache cargo-xdk
+      id: cache-cargo-xdk
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/cargo-xdk
+        key: ${{ runner.os }}-cargo-xdk-${{ hashFiles('~/.cargo/bin/cargo-xdk') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-xdk-
+        
+    - name: Install cargo-xdk
+      if: steps.cache-cargo-xdk.outputs.cache-hit != 'true'
+      run: |
+        cargo install cargo-xdk --git https://github.com/tiann/cargo-xdk
+        
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+      
+    - name: Build with Gradle
+      run: ./gradlew assembleRelease --stacktrace
+      
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: twoyi-apk
+        path: app/build/outputs/apk/release/*.apk
+        retention-days: 30
+        
+    - name: Upload build reports on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-reports
+        path: app/build/reports/
+        retention-days: 7

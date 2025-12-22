@@ -92,4 +92,20 @@
     <string name="settings_key_shutdown">Shutdown</string>
     <string name="settings_key_reboot">Reboot</string>
     <string name="replace_rom_unofficial_tips">Sorry, please edit the rom info and avoid using official author name :)</string>
+    <string name="settings_key_launch_container">Launch Container</string>
+    <string name="settings_launch_container_summary">Start the TwoYi Android container</string>
+    <string name="settings_key_export_rootfs">Export Rootfs</string>
+    <string name="settings_export_rootfs_summary">Export rootfs to a tarball file</string>
+    <string name="settings_key_import_rootfs">Import Rootfs</string>
+    <string name="settings_import_rootfs_summary">Import rootfs from a tarball file</string>
+    <string name="settings_title_launch_container">Launch Container</string>
+    <string name="settings_title_export_rootfs">Export Rootfs</string>
+    <string name="settings_title_import_rootfs">Import Rootfs</string>
+    <string name="export_rootfs_success">Rootfs exported successfully</string>
+    <string name="export_rootfs_failed">Failed to export rootfs: %1$s</string>
+    <string name="import_rootfs_success">Rootfs imported successfully. Please reboot to apply changes.</string>
+    <string name="import_rootfs_failed">Failed to import rootfs: %1$s</string>
+    <string name="import_rootfs_confirm_title">Import Rootfs Confirmation</string>
+    <string name="import_rootfs_confirm_message">This will replace the current rootfs. All data will be preserved. Continue?</string>
+    <string name="file_picker_error">Failed to open file picker</string>
 </resources>
