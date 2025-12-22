@@ -49,36 +49,6 @@ jobs:
       run: |
         cargo install cargo-xdk --git https://github.com/tiann/cargo-xdk
         
-    - name: Download rootfs for testing (if not exists)
-      run: |
-        if [ ! -f app/src/main/assets/rootfs.7z ]; then
-          mkdir -p app/src/main/assets
-          # Download the test rootfs from the project's own release
-          # Note: In production, rootfs should be:
-          # 1. Bundled with the app in the repository, OR
-          # 2. Verified with SHA256 checksum, OR  
-          # 3. Signed and verified
-          # This download is for CI testing purposes only and uses the project's own release
-          curl -L -o /tmp/rootfs.7z https://github.com/cyanmint/twoyi/releases/download/original/rootfs.7z
-          # TODO: Add checksum verification when stable release is available
-          # echo "EXPECTED_SHA256 /tmp/rootfs.7z" | sha256sum -c -
-          mv /tmp/rootfs.7z app/src/main/assets/rootfs.7z
-        fi
-        
-    - name: Download rom.ini for testing (if not exists)
-      run: |
-        if [ ! -f app/src/main/assets/rom.ini ]; then
-          mkdir -p app/src/main/assets
-          # Create a basic rom.ini file
-          cat > app/src/main/assets/rom.ini << EOF
-        author=weishu
-        version=1.0.0
-        code=1
-        desc=Official TwoYi ROM
-        md5=
-        EOF
-        fi
-        
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
       

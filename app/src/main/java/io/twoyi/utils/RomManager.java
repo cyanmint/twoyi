@@ -20,14 +20,6 @@ import android.util.Log;
 
 import com.topjohnwu.superuser.Shell;
 
-import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
-import org.apache.commons.compress.archivers.sevenz.SevenZFile;
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
-import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
-import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
-
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
@@ -56,15 +48,13 @@ public final class RomManager {
 
     private static final String TAG = "RomManager";
 
-    private static final String ROOTFS_NAME = "rootfs.7z";
-
     private static final String ROM_INFO_FILE = "rom.ini";
 
     private static final String DEFAULT_INFO = "unknown";
 
     private static final String LOADER_FILE = "libloader.so";
 
-    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.7z";
+    private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.tar.gz";
     
     // File permission constants for tar archive extraction
     // Using octal notation for POSIX file permissions (standard Java octal prefix is 0)
@@ -197,20 +187,34 @@ public final class RomManager {
     }
 
     public static RomInfo getRomInfo(File rom) {
-        try (SevenZFile zFile = new SevenZFile(rom)) {
-
-            SevenZArchiveEntry entry;
-
-            while ((entry = zFile.getNextEntry()) != null) {
-                if (entry.getName().equals("rootfs/rom.ini")) {
-                    byte[] content = new byte[(int) entry.getSize()];
-                    zFile.read(content, 0, content.length);
-                    ByteArrayInputStream bais = new ByteArrayInputStream(content);
-                    return getRomInfo(bais);
+        File tempDir = null;
+        try {
+            // Create temp directory to extract rom.ini
+            tempDir = Files.createTempDirectory("rominfo").toFile();
+            
+            // Extract only rom.ini using system tar
+            Shell shell = ShellUtil.newSh();
+            Shell.Result result = shell.newJob()
+                .add(String.format("tar -xzf '%s' -C '%s' rom.ini 2>/dev/null || true",
+                    rom.getAbsolutePath(),
+                    tempDir.getAbsolutePath()))
+                .exec();
+            
+            // Look for rom.ini in temp directory
+            File romIni = new File(tempDir, "rom.ini");
+            
+            if (romIni.exists()) {
+                try (FileInputStream fis = new FileInputStream(romIni)) {
+                    return getRomInfo(fis);
                 }
             }
         } catch (Throwable e) {
             LogEvents.trackError(e);
+        } finally {
+            // Clean up temp directory
+            if (tempDir != null && tempDir.exists()) {
+                IOUtils.deleteDirectory(tempDir);
+            }
         }
         return DEFAULT_ROM_INFO;
     }
@@ -231,40 +235,30 @@ public final class RomManager {
         removeVendorPartition(context);
 
         if (!romExist) {
-            // first init
-            extractRootfsInAssets(context);
+            // No bundled rootfs - user must import via tarball
+            Log.i(TAG, "No rootfs found. User must import rootfs tarball.");
             return;
         }
 
         if (forceInstall) {
             if (use3rdRom) {
-                // install 3rd rom
+                // install 3rd rom from imported tarball
                 boolean success = extract3rdRootfs(context);
                 if (!success) {
                     showRootfsInstallationFailure(context);
                     return;
                 }
             } else {
-                // factory reset!!
-                if (!extractRootfsInAssets(context)) {
-                    showRootfsInstallationFailure(context);
-                    return;
-                }
+                // factory reset - no bundled rootfs available
+                Log.w(TAG, "Factory reset requested but no bundled rootfs available");
+                showRootfsInstallationFailure(context);
+                return;
             }
 
             // force install finish, reset the state.
             AppKV.setBooleanConfig(context, AppKV.FORCE_ROM_BE_RE_INSTALL, false);
-        } else {
-            if (use3rdRom) {
-                Log.w(TAG, "WTF? 3rd ROM must be force install!");
-            }
-            if (needsUpgrade) {
-                Log.i(TAG, "upgrade factory rom..");
-                if (!extractRootfsInAssets(context)) {
-                    showRootfsInstallationFailure(context);
-                }
-            }
         }
+        // No automatic upgrades since there's no bundled rootfs
     }
 
     private static void showRootfsInstallationFailure(Context context) {
@@ -288,89 +282,31 @@ public final class RomManager {
         if (!rootfs3rd.exists()) {
             return false;
         }
-        int err = extractRootfs(context, rootfs3rd);
-        return err == 0;
-    }
-
-    public static int extractRootfs(Context context, File rootfs7z) {
         try {
-            File outputDir = context.getDataDir();
-            extract7zFile(rootfs7z, outputDir);
-            return 0;
+            extractTarballToDataDir(context, rootfs3rd);
+            return true;
         } catch (IOException e) {
-            Log.e(TAG, "Failed to extract rootfs", e);
-            return 1;
+            Log.e(TAG, "Failed to extract 3rd rootfs", e);
+            return false;
         }
     }
 
-    private static void extract7zFile(File archive, File outputDir) throws IOException {
-        try (SevenZFile sevenZFile = new SevenZFile(archive)) {
-            SevenZArchiveEntry entry;
-            while ((entry = sevenZFile.getNextEntry()) != null) {
-                String entryName = entry.getName();
-                
-                // Validate entry name to prevent path traversal attacks
-                if (entryName.contains("..") || entryName.startsWith("/") || new File(entryName).isAbsolute()) {
-                    Log.w(TAG, "Skipping potentially malicious 7z entry: " + entryName);
-                    continue;
-                }
-                
-                if (entry.isDirectory()) {
-                    File dir = new File(outputDir, entryName);
-                    ensureDir(dir);
-                    continue;
-                }
-                
-                File outFile = new File(outputDir, entryName);
-                
-                // Double-check that the resolved path is within output directory
-                String canonicalOutput = outFile.getCanonicalPath();
-                String canonicalOutputDir = outputDir.getCanonicalPath();
-                if (!canonicalOutput.startsWith(canonicalOutputDir + File.separator) && !canonicalOutput.equals(canonicalOutputDir)) {
-                    Log.w(TAG, "Skipping 7z entry outside output directory: " + entryName);
-                    continue;
-                }
-                
-                File parent = outFile.getParentFile();
-                if (parent != null) {
-                    ensureDir(parent);
-                }
-                
-                try (FileOutputStream fos = new FileOutputStream(outFile)) {
-                    byte[] buffer = new byte[8192];
-                    int n;
-                    while ((n = sevenZFile.read(buffer)) > 0) {
-                        fos.write(buffer, 0, n);
-                    }
-                }
-            }
+    private static void extractTarballToDataDir(Context context, File tarballFile) throws IOException {
+        File outputDir = context.getDataDir();
+        
+        // Use system tar command for extraction (preserves symlinks and permissions)
+        // cd into output directory and extract archive there
+        Shell shell = ShellUtil.newSh();
+        Shell.Result result = shell.newJob()
+            .add(String.format("cd '%s' && tar xzf '%s'", 
+                outputDir.getAbsolutePath(),
+                tarballFile.getAbsolutePath()))
+            .exec();
+        
+        if (!result.isSuccess()) {
+            String errorMsg = result.getErr().isEmpty() ? "Unknown error" : String.join("\n", result.getErr());
+            throw new IOException("tar extraction failed: " + errorMsg);
         }
-    }
-
-    public static boolean extractRootfsInAssets(Context context) {
-
-        // read assets
-        long t1 = SystemClock.elapsedRealtime();
-        File rootfs7z = context.getFileStreamPath(ROOTFS_NAME);
-        try (InputStream inputStream = new BufferedInputStream(context.getAssets().open(ROOTFS_NAME));
-             OutputStream os = new BufferedOutputStream(new FileOutputStream(rootfs7z))) {
-            byte[] buffer = new byte[10240];
-            int count;
-            while ((count = inputStream.read(buffer)) > 0) {
-                os.write(buffer, 0, count);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        long t2 = SystemClock.elapsedRealtime();
-
-        int ret = extractRootfs(context, rootfs7z);
-
-        long t3 = SystemClock.elapsedRealtime();
-
-        Log.i(TAG, "extract rootfs, read assets: " + (t2 - t1) + " un7z: " + (t3 - t2) + "ret: " + ret);
-
-        return ret == 0;
     }
 
     public static File getRootfsDir(Context context) {
@@ -441,52 +377,37 @@ public final class RomManager {
     public static void exportRootfsToTarball(Context context, Uri outputUri) throws IOException {
         File rootfsDir = getRootfsDir(context);
         
-        ContentResolver contentResolver = context.getContentResolver();
-        try (OutputStream outputStream = contentResolver.openOutputStream(outputUri);
-             GzipCompressorOutputStream gzipOut = new GzipCompressorOutputStream(outputStream);
-             TarArchiveOutputStream tarOut = new TarArchiveOutputStream(gzipOut)) {
-            
-            tarOut.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
-            addDirectoryToTar(tarOut, rootfsDir, "");
-        }
-    }
-
-    private static void addDirectoryToTar(TarArchiveOutputStream tarOut, 
-                                         File dir, String parentPath) throws IOException {
-        File[] files;
+        // Create a temporary tarball using system tar (preserves symlinks and permissions)
+        File tempTar = new File(context.getCacheDir(), "rootfs_export_temp.tar.gz");
         try {
-            files = dir.listFiles();
-        } catch (SecurityException e) {
-            Log.e(TAG, "SecurityException listing files in: " + dir.getAbsolutePath(), e);
-            throw new IOException("Permission denied accessing directory: " + dir.getAbsolutePath(), e);
-        }
-        
-        if (files == null) {
-            Log.w(TAG, "Unable to list files in: " + dir.getAbsolutePath());
-            throw new IOException("Unable to list files in directory: " + dir.getAbsolutePath());
-        }
-
-        for (File file : files) {
-            String entryName = parentPath + file.getName();
+            // Use system tar to create archive with all files including symlinks
+            // tar czf <archive> -C <dir> . creates archive from directory contents without dir name
+            Shell shell = ShellUtil.newSh();
+            Shell.Result result = shell.newJob()
+                .add(String.format("tar czf '%s' -C '%s' .", 
+                    tempTar.getAbsolutePath(),
+                    rootfsDir.getAbsolutePath()))
+                .exec();
             
-            if (file.isDirectory()) {
-                entryName += "/";
-                TarArchiveEntry entry = new TarArchiveEntry(file, entryName);
-                tarOut.putArchiveEntry(entry);
-                tarOut.closeArchiveEntry();
-                addDirectoryToTar(tarOut, file, entryName);
-            } else if (file.isFile()) {
-                TarArchiveEntry entry = new TarArchiveEntry(file, entryName);
-                tarOut.putArchiveEntry(entry);
-                
-                try (FileInputStream fis = new FileInputStream(file)) {
-                    byte[] buffer = new byte[8192];
-                    int count;
-                    while ((count = fis.read(buffer)) > 0) {
-                        tarOut.write(buffer, 0, count);
-                    }
+            if (!result.isSuccess()) {
+                String errorMsg = result.getErr().isEmpty() ? "Unknown error" : String.join("\n", result.getErr());
+                throw new IOException("tar creation failed: " + errorMsg);
+            }
+            
+            // Copy the temp tarball to the output URI
+            ContentResolver contentResolver = context.getContentResolver();
+            try (FileInputStream fis = new FileInputStream(tempTar);
+                 OutputStream outputStream = contentResolver.openOutputStream(outputUri)) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = fis.read(buffer)) > 0) {
+                    outputStream.write(buffer, 0, count);
                 }
-                tarOut.closeArchiveEntry();
+            }
+        } finally {
+            // Clean up temp file
+            if (tempTar.exists()) {
+                tempTar.delete();
             }
         }
     }
@@ -494,55 +415,41 @@ public final class RomManager {
     public static void importRootfsFromTarball(Context context, Uri inputUri) throws IOException {
         File rootfsDir = getRootfsDir(context);
         
-        // Remove existing rootfs
-        IOUtils.deleteDirectory(rootfsDir);
-        ensureDir(rootfsDir);
-        
-        ContentResolver contentResolver = context.getContentResolver();
-        try (InputStream inputStream = contentResolver.openInputStream(inputUri);
-             GzipCompressorInputStream gzipIn = new GzipCompressorInputStream(inputStream);
-             TarArchiveInputStream tarIn = new TarArchiveInputStream(gzipIn)) {
+        // Create a temporary tarball from the input URI
+        File tempTar = new File(context.getCacheDir(), "rootfs_import_temp.tar.gz");
+        try {
+            // Copy from URI to temp file
+            ContentResolver contentResolver = context.getContentResolver();
+            try (InputStream inputStream = contentResolver.openInputStream(inputUri);
+                 FileOutputStream fos = new FileOutputStream(tempTar)) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = inputStream.read(buffer)) > 0) {
+                    fos.write(buffer, 0, count);
+                }
+            }
             
-            TarArchiveEntry entry;
-            while ((entry = (TarArchiveEntry) tarIn.getNextEntry()) != null) {
-                String entryName = entry.getName();
-                
-                // Validate entry name to prevent path traversal attacks
-                if (entryName.contains("..") || entryName.startsWith("/") || new File(entryName).isAbsolute()) {
-                    Log.w(TAG, "Skipping potentially malicious tar entry: " + entryName);
-                    continue;
-                }
-                
-                File outputFile = new File(rootfsDir, entryName);
-                
-                // Double-check that the resolved path is within rootfs directory
-                String canonicalRootfs = rootfsDir.getCanonicalPath();
-                String canonicalOutput = outputFile.getCanonicalPath();
-                if (!canonicalOutput.startsWith(canonicalRootfs + File.separator) && !canonicalOutput.equals(canonicalRootfs)) {
-                    Log.w(TAG, "Skipping tar entry outside rootfs directory: " + entryName);
-                    continue;
-                }
-                
-                if (entry.isDirectory()) {
-                    ensureDir(outputFile);
-                } else {
-                    ensureDir(outputFile.getParentFile());
-                    
-                    try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-                        byte[] buffer = new byte[8192];
-                        int count;
-                        while ((count = tarIn.read(buffer)) > 0) {
-                            fos.write(buffer, 0, count);
-                        }
-                    }
-                    
-                    // Preserve permissions
-                    if (entry.getMode() != 0) {
-                        outputFile.setExecutable((entry.getMode() & OWNER_EXECUTE) != 0);
-                        outputFile.setReadable((entry.getMode() & OWNER_READ) != 0);
-                        outputFile.setWritable((entry.getMode() & OWNER_WRITE) != 0);
-                    }
-                }
+            // Remove existing rootfs and create fresh directory
+            IOUtils.deleteDirectory(rootfsDir);
+            ensureDir(rootfsDir);
+            
+            // Use system tar to extract (preserves symlinks and permissions)
+            // cd into rootfs directory and extract archive there
+            Shell shell = ShellUtil.newSh();
+            Shell.Result result = shell.newJob()
+                .add(String.format("cd '%s' && tar xzf '%s'", 
+                    rootfsDir.getAbsolutePath(),
+                    tempTar.getAbsolutePath()))
+                .exec();
+            
+            if (!result.isSuccess()) {
+                String errorMsg = result.getErr().isEmpty() ? "Unknown error" : String.join("\n", result.getErr());
+                throw new IOException("tar extraction failed: " + errorMsg);
+            }
+        } finally {
+            // Clean up temp file
+            if (tempTar.exists()) {
+                tempTar.delete();
             }
         }
     }
