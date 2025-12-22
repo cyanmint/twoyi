@@ -62,6 +62,9 @@ public final class RomManager {
 
     private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.tar.gz";
     
+    // Prefix used in some tarballs for host-absolute symlink paths
+    private static final String HOST_ROOTFS_PREFIX = "/data/data/io.twoyi/rootfs/";
+    
     // File permission constants for tar archive extraction
     // Using octal notation for POSIX file permissions (standard Java octal prefix is 0)
     // These constants match the standard Unix permission bits:
@@ -503,10 +506,10 @@ public final class RomManager {
                             
                             // Check if this is a host-absolute path that includes the rootfs prefix
                             // e.g., "/data/data/io.twoyi/rootfs/data/data" should become "data/data"
-                            if (linkName.contains("/data/data/io.twoyi/rootfs/")) {
+                            if (linkName.contains(HOST_ROOTFS_PREFIX)) {
                                 // Extract the path after the rootfs prefix
-                                int rootfsIndex = linkName.indexOf("/data/data/io.twoyi/rootfs/");
-                                containerPath = linkName.substring(rootfsIndex + "/data/data/io.twoyi/rootfs/".length());
+                                int rootfsIndex = linkName.indexOf(HOST_ROOTFS_PREFIX);
+                                containerPath = linkName.substring(rootfsIndex + HOST_ROOTFS_PREFIX.length());
                             } else {
                                 // Standard container-absolute path like "/sbin/charger"
                                 // This means "rootfs/sbin/charger"
@@ -522,7 +525,9 @@ public final class RomManager {
                                 // Make relative path from symlink location to target
                                 linkTarget = symlinkParent.relativize(absoluteTarget);
                             } catch (IllegalArgumentException e) {
-                                // Fallback: if relativize fails, construct manually
+                                // Fallback: relativize() can fail if paths are on different roots
+                                // In this case, use the container path as-is which will create
+                                // a symlink pointing to a path relative to the rootfs directory
                                 linkTarget = Paths.get(containerPath);
                             }
                             logWriter.write("Symlink (abs->rel): " + entry.getName() + " -> " + linkName + " => " + linkTarget + "\n");
