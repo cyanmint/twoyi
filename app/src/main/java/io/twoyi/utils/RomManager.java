@@ -294,7 +294,8 @@ public final class RomManager {
     }
 
     private static void extractTarballToDataDir(Context context, File tarballFile) throws IOException {
-        File outputDir = context.getDataDir();
+        // Extract into rootfs directory, not data dir
+        File outputDir = new File(context.getDataDir(), "rootfs");
         
         // Use Apache Commons Compress to extract tar.gz archive
         try (FileInputStream fis = new FileInputStream(tarballFile);
@@ -314,14 +315,13 @@ public final class RomManager {
                     
                     if (Paths.get(linkName).isAbsolute()) {
                         // Absolute path in tar refers to path inside container
-                        // For extracting to data dir, rootfs is a subdirectory
-                        // e.g., "/sbin/charger" means "rootfs/sbin/charger" from data dir
+                        // e.g., "/sbin/charger" means "sbin/charger" within rootfs
                         String containerPath = linkName.startsWith("/") ? linkName.substring(1) : linkName;
                         
                         // Get the symlink's parent directory
                         Path symlinkParent = outputFile.toPath().getParent();
-                        // Get the absolute target path (assumes rootfs subdirectory)
-                        Path absoluteTarget = outputDir.toPath().resolve("rootfs").resolve(containerPath);
+                        // Get the absolute target path within rootfs
+                        Path absoluteTarget = outputDir.toPath().resolve(containerPath);
                         
                         try {
                             // Make relative path from symlink location to target
