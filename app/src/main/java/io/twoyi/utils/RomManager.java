@@ -446,10 +446,19 @@ public final class RomManager {
     private static void addFilesToTarGz(File file, String parent, TarArchiveOutputStream taos) throws IOException {
         String entryName = parent + file.getName();
         
-        TarArchiveEntry tarEntry = new TarArchiveEntry(file, entryName);
-        taos.putArchiveEntry(tarEntry);
-        
-        if (file.isFile()) {
+        // Check if it's a symbolic link
+        Path filePath = file.toPath();
+        if (Files.isSymbolicLink(filePath)) {
+            // Handle symbolic links - preserve them with relative paths
+            Path linkTarget = Files.readSymbolicLink(filePath);
+            TarArchiveEntry tarEntry = new TarArchiveEntry(entryName, TarArchiveEntry.LF_SYMLINK);
+            // Store the link target as-is (should already be relative)
+            tarEntry.setLinkName(linkTarget.toString());
+            taos.putArchiveEntry(tarEntry);
+            taos.closeArchiveEntry();
+        } else if (file.isFile()) {
+            TarArchiveEntry tarEntry = new TarArchiveEntry(file, entryName);
+            taos.putArchiveEntry(tarEntry);
             try (FileInputStream fis = new FileInputStream(file)) {
                 byte[] buffer = new byte[8192];
                 int count;
@@ -459,6 +468,8 @@ public final class RomManager {
             }
             taos.closeArchiveEntry();
         } else if (file.isDirectory()) {
+            TarArchiveEntry tarEntry = new TarArchiveEntry(file, entryName);
+            taos.putArchiveEntry(tarEntry);
             taos.closeArchiveEntry();
             File[] children = file.listFiles();
             if (children != null) {
@@ -466,9 +477,6 @@ public final class RomManager {
                     addFilesToTarGz(child, entryName + "/", taos);
                 }
             }
-        } else {
-            // Handle symlinks and other special files
-            taos.closeArchiveEntry();
         }
     }
 
