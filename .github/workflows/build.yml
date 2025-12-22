@@ -32,20 +32,67 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         cache: gradle
+    
+    - name: Cache Android SDK
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.android/sdk
+          /usr/local/lib/android/sdk
+        key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-android-sdk-
         
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
+    
+    - name: Cache NDK
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.android/sdk/ndk/21.4.7075529
+          /usr/local/lib/android/sdk/ndk/21.4.7075529
+        key: ${{ runner.os }}-ndk-21.4.7075529
+        restore-keys: |
+          ${{ runner.os }}-ndk-
       
     - name: Install NDK
       run: |
-        echo "y" | sdkmanager "ndk;21.4.7075529"
+        if [ ! -d "$ANDROID_SDK_ROOT/ndk/21.4.7075529" ]; then
+          echo "y" | sdkmanager "ndk;21.4.7075529"
+        else
+          echo "NDK already cached"
+        fi
+    
+    - name: Cache Rust toolchain
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.rustup
+          ~/.cargo/bin
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-rust-
         
     - name: Setup Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: aarch64-linux-android
+    
+    - name: Cache cargo-xdk
+      id: cache-cargo-xdk
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/cargo-xdk
+        key: ${{ runner.os }}-cargo-xdk-${{ hashFiles('~/.cargo/bin/cargo-xdk') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-xdk-
         
     - name: Install cargo-xdk
+      if: steps.cache-cargo-xdk.outputs.cache-hit != 'true'
       run: |
         cargo install cargo-xdk --git https://github.com/tiann/cargo-xdk
         
