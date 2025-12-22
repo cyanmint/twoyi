@@ -66,10 +66,11 @@ public final class RomManager {
     private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.7z";
     
     // File permission constants for tar archive extraction
-    // Using octal notation for POSIX file permissions
-    private static final int OWNER_EXECUTE = 0100;  // Owner execute permission (octal 0100 = decimal 64)
-    private static final int OWNER_READ = 0400;     // Owner read permission (octal 0400 = decimal 256)
-    private static final int OWNER_WRITE = 0200;    // Owner write permission (octal 0200 = decimal 128)
+    // Using octal notation for POSIX file permissions (standard Java octal prefix is 0)
+    // These constants match the standard Unix permission bits:
+    private static final int OWNER_EXECUTE = 0100;  // Octal 0100 = decimal 64  = S_IXUSR (owner execute)
+    private static final int OWNER_READ = 0400;     // Octal 0400 = decimal 256 = S_IRUSR (owner read)
+    private static final int OWNER_WRITE = 0200;    // Octal 0200 = decimal 128 = S_IWUSR (owner write)
 
     private RomManager() {
     }
@@ -455,7 +456,23 @@ public final class RomManager {
             
             TarArchiveEntry entry;
             while ((entry = tarIn.getNextEntry()) != null) {
-                File outputFile = new File(rootfsDir, entry.getName());
+                String entryName = entry.getName();
+                
+                // Validate entry name to prevent path traversal attacks
+                if (entryName.contains("..") || entryName.startsWith("/") || new File(entryName).isAbsolute()) {
+                    Log.w(TAG, "Skipping potentially malicious tar entry: " + entryName);
+                    continue;
+                }
+                
+                File outputFile = new File(rootfsDir, entryName);
+                
+                // Double-check that the resolved path is within rootfs directory
+                String canonicalRootfs = rootfsDir.getCanonicalPath();
+                String canonicalOutput = outputFile.getCanonicalPath();
+                if (!canonicalOutput.startsWith(canonicalRootfs + File.separator) && !canonicalOutput.equals(canonicalRootfs)) {
+                    Log.w(TAG, "Skipping tar entry outside rootfs directory: " + entryName);
+                    continue;
+                }
                 
                 if (entry.isDirectory()) {
                     ensureDir(outputFile);
