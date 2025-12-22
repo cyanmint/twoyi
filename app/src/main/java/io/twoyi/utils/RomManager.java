@@ -66,9 +66,10 @@ public final class RomManager {
     private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.7z";
     
     // File permission constants for tar archive extraction
-    private static final int OWNER_EXECUTE = 0100;
-    private static final int OWNER_READ = 0400;
-    private static final int OWNER_WRITE = 0200;
+    // Using octal notation for POSIX file permissions
+    private static final int OWNER_EXECUTE = 0100;  // Owner execute permission (octal 0100 = decimal 64)
+    private static final int OWNER_READ = 0400;     // Owner read permission (octal 0400 = decimal 256)
+    private static final int OWNER_WRITE = 0200;    // Owner write permission (octal 0200 = decimal 128)
 
     private RomManager() {
     }

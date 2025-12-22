@@ -50,9 +50,14 @@ jobs:
         if [ ! -f app/src/main/assets/rootfs.7z ]; then
           mkdir -p app/src/main/assets
           # Download the test rootfs from the project's own release
-          # Note: In production, rootfs should be bundled with the app or verified with checksums
-          # This is for CI testing purposes only
+          # Note: In production, rootfs should be:
+          # 1. Bundled with the app in the repository, OR
+          # 2. Verified with SHA256 checksum, OR  
+          # 3. Signed and verified
+          # This download is for CI testing purposes only and uses the project's own release
           curl -L -o /tmp/rootfs.7z https://github.com/cyanmint/twoyi/releases/download/original/rootfs.7z
+          # TODO: Add checksum verification when stable release is available
+          # echo "EXPECTED_SHA256 /tmp/rootfs.7z" | sha256sum -c -
           mv /tmp/rootfs.7z app/src/main/assets/rootfs.7z
         fi
         
