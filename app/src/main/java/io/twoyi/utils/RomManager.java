@@ -504,19 +504,13 @@ public final class RomManager {
                             // Absolute path in tar - need to determine what it refers to
                             String containerPath;
                             
-                            // Check if this is a host-absolute path that includes a rootfs prefix
-                            // Could be /data/data/io.twoyi/rootfs/, /data/user/0/io.twoyi/rootfs/, etc.
-                            // We need to extract just the path after "/rootfs/"
-                            int rootfsMarkerIndex = linkName.indexOf("/rootfs/");
-                            if (rootfsMarkerIndex >= 0) {
+                            // Check if this is a host-absolute path that includes the twoyi rootfs prefix
+                            // Common patterns: /data/data/io.twoyi/rootfs/... or /data/user/0/io.twoyi/rootfs/...
+                            if (linkName.contains("/io.twoyi/rootfs/")) {
                                 // Extract the path after the rootfs marker
-                                containerPath = linkName.substring(rootfsMarkerIndex + "/rootfs/".length());
+                                int rootfsMarkerIndex = linkName.indexOf("/io.twoyi/rootfs/");
+                                containerPath = linkName.substring(rootfsMarkerIndex + "/io.twoyi/rootfs/".length());
                                 logWriter.write("Symlink (host-abs): " + entry.getName() + " -> " + linkName + " (stripped to: " + containerPath + ")\n");
-                            } else if (linkName.contains(HOST_ROOTFS_PREFIX)) {
-                                // Fallback: check for exact hardcoded prefix (backward compat)
-                                int rootfsIndex = linkName.indexOf(HOST_ROOTFS_PREFIX);
-                                containerPath = linkName.substring(rootfsIndex + HOST_ROOTFS_PREFIX.length());
-                                logWriter.write("Symlink (host-abs-prefix): " + entry.getName() + " -> " + linkName + " (stripped to: " + containerPath + ")\n");
                             } else {
                                 // Standard container-absolute path like "/sbin/charger"
                                 // This means "rootfs/sbin/charger"
