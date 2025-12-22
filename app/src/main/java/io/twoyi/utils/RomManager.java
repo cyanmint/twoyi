@@ -378,15 +378,15 @@ public final class RomManager {
         File rootfsDir = getRootfsDir(context);
         
         // Create a temporary tarball using system tar (preserves symlinks and permissions)
-        File tempTar = new File(context.getCacheDir(), "rootfs_export_temp.tar.gz");
+        File tempTar = new File(context.getCacheDir(), "rom.tar.gz");
         try {
             // Use system tar to create archive with all files including symlinks
-            // tar czf <archive> -C <dir> . creates archive from directory contents without dir name
+            // cd into rootfs directory and archive all contents using *
             Shell shell = ShellUtil.newSh();
             Shell.Result result = shell.newJob()
-                .add(String.format("tar czf '%s' -C '%s' .", 
-                    tempTar.getAbsolutePath(),
-                    rootfsDir.getAbsolutePath()))
+                .add(String.format("cd '%s' && tar czf '%s' *", 
+                    rootfsDir.getAbsolutePath(),
+                    tempTar.getAbsolutePath()))
                 .exec();
             
             if (!result.isSuccess()) {
@@ -415,8 +415,8 @@ public final class RomManager {
     public static void importRootfsFromTarball(Context context, Uri inputUri) throws IOException {
         File rootfsDir = getRootfsDir(context);
         
-        // Create a temporary tarball from the input URI
-        File tempTar = new File(context.getCacheDir(), "rootfs_import_temp.tar.gz");
+        // Create a temporary tarball from the input URI in cache directory
+        File tempTar = new File(context.getCacheDir(), "rom.tar.gz");
         try {
             // Copy from URI to temp file
             ContentResolver contentResolver = context.getContentResolver();
