@@ -49,7 +49,9 @@ jobs:
       run: |
         if [ ! -f app/src/main/assets/rootfs.7z ]; then
           mkdir -p app/src/main/assets
-          # Download the test rootfs
+          # Download the test rootfs from the project's own release
+          # Note: In production, rootfs should be bundled with the app or verified with checksums
+          # This is for CI testing purposes only
           curl -L -o /tmp/rootfs.7z https://github.com/cyanmint/twoyi/releases/download/original/rootfs.7z
           mv /tmp/rootfs.7z app/src/main/assets/rootfs.7z
         fi

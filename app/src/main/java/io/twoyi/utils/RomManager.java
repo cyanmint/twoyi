@@ -406,12 +406,13 @@ public final class RomManager {
         try {
             files = dir.listFiles();
         } catch (SecurityException e) {
-            Log.w(TAG, "SecurityException listing files in: " + dir.getAbsolutePath(), e);
-            return;
+            Log.e(TAG, "SecurityException listing files in: " + dir.getAbsolutePath(), e);
+            throw new IOException("Permission denied accessing directory: " + dir.getAbsolutePath(), e);
         }
         
         if (files == null) {
-            return;
+            Log.w(TAG, "Unable to list files in: " + dir.getAbsolutePath());
+            throw new IOException("Unable to list files in directory: " + dir.getAbsolutePath());
         }
 
         for (File file : files) {
