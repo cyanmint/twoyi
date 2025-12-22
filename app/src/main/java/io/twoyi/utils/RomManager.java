@@ -499,7 +499,7 @@ public final class RomManager {
                         
                         if (Paths.get(linkName).isAbsolute()) {
                             // Absolute symlink detected - warn user
-                            String warning = "WARNING: Absolute symlink detected: " + entry.getName() + " -> " + linkName;
+                            String warning = "WARNING: Absolute symlink detected: " + entry.getName() + " -> " + linkTarget;
                             Log.w(TAG, warning);
                             logWriter.write(warning + "\n");
                             logWriter.write("  Keeping as-is, but this may cause issues. Use relative symlinks in tarball.\n");
