@@ -64,6 +64,11 @@ public final class RomManager {
     private static final String LOADER_FILE = "libloader.so";
 
     private static final String CUSTOM_ROM_FILE_NAME = "rootfs_3rd.7z";
+    
+    // File permission constants for tar archive extraction
+    private static final int OWNER_EXECUTE = 0100;
+    private static final int OWNER_READ = 0400;
+    private static final int OWNER_WRITE = 0200;
 
     private RomManager() {
     }
@@ -397,7 +402,14 @@ public final class RomManager {
 
     private static void addDirectoryToTar(TarArchiveOutputStream tarOut, 
                                          File dir, String parentPath) throws IOException {
-        File[] files = dir.listFiles();
+        File[] files;
+        try {
+            files = dir.listFiles();
+        } catch (SecurityException e) {
+            Log.w(TAG, "SecurityException listing files in: " + dir.getAbsolutePath(), e);
+            return;
+        }
+        
         if (files == null) {
             return;
         }
@@ -458,9 +470,9 @@ public final class RomManager {
                     
                     // Preserve permissions
                     if (entry.getMode() != 0) {
-                        outputFile.setExecutable((entry.getMode() & 0100) != 0);
-                        outputFile.setReadable((entry.getMode() & 0400) != 0);
-                        outputFile.setWritable((entry.getMode() & 0200) != 0);
+                        outputFile.setExecutable((entry.getMode() & OWNER_EXECUTE) != 0);
+                        outputFile.setReadable((entry.getMode() & OWNER_READ) != 0);
+                        outputFile.setWritable((entry.getMode() & OWNER_WRITE) != 0);
                     }
                 }
             }

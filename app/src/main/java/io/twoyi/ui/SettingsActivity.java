@@ -154,7 +154,7 @@ public class SettingsActivity extends AppCompatActivity {
                 try {
                     startActivityForResult(intent, REQUEST_IMPORT_ROOTFS);
                 } catch (Throwable ignored) {
-                    Toast.makeText(getContext(), "Error", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(getContext(), R.string.file_picker_error, Toast.LENGTH_SHORT).show();
                 }
                 return true;
             });
@@ -167,7 +167,7 @@ public class SettingsActivity extends AppCompatActivity {
                 try {
                     startActivityForResult(intent, REQUEST_EXPORT_ROOTFS);
                 } catch (Throwable ignored) {
-                    Toast.makeText(getContext(), "Error", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(getContext(), R.string.file_picker_error, Toast.LENGTH_SHORT).show();
                 }
                 return true;
             });
@@ -293,15 +293,14 @@ public class SettingsActivity extends AppCompatActivity {
             }).done(result -> {
 
                 File rootfs3rd = result.first;
-                RomManager.RomInfo romInfo = result.second;
+                RomInfo romInfo = result.second;
                 UIHelper.dismiss(dialog);
 
                 // copy finished, show dialog confirm
                 if (romInfo.isValid()) {
-
+                    // Official ROMs can now be imported without restriction
+                    // to allow users to import initial rootfs if not bundled
                     String author = romInfo.author;
-                    // Allow official ROMs to be imported if not bundled
-                    // Removed restriction: if ("weishu".equalsIgnoreCase(author) || "twoyi".equalsIgnoreCase(author))
                     
                     UIHelper.getDialogBuilder(activity)
                             .setTitle(R.string.replace_rom_confirm_title)

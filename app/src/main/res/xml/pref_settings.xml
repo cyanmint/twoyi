@@ -10,7 +10,7 @@
         <Preference
             android:key="@string/settings_key_launch_container"
             android:summary="@string/settings_launch_container_summary"
-            android:title="@string/settings_key_launch_container" />
+            android:title="@string/settings_title_launch_container" />
 
         <Preference
             android:key="@string/settings_key_import_app"
@@ -37,12 +37,12 @@
         <Preference
             android:key="@string/settings_key_import_rootfs"
             android:summary="@string/settings_import_rootfs_summary"
-            android:title="@string/settings_key_import_rootfs" />
+            android:title="@string/settings_title_import_rootfs" />
 
         <Preference
             android:key="@string/settings_key_export_rootfs"
             android:summary="@string/settings_export_rootfs_summary"
-            android:title="@string/settings_key_export_rootfs" />
+            android:title="@string/settings_title_export_rootfs" />
 
         <Preference
             android:key="@string/settings_key_replace_rom"
