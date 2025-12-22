@@ -32,16 +32,6 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         cache: gradle
-    
-    - name: Cache Android SDK
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.android/sdk
-          /usr/local/lib/android/sdk
-        key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-android-sdk-
         
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
