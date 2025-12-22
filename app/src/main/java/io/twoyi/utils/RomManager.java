@@ -308,12 +308,41 @@ public final class RomManager {
                 if (entry.isDirectory()) {
                     ensureDir(outputFile);
                 } else if (entry.isSymbolicLink()) {
-                    // Handle symbolic links
+                    // Handle symbolic links - convert absolute container paths to relative
                     String linkName = entry.getLinkName();
+                    Path linkTarget;
+                    
+                    if (Paths.get(linkName).isAbsolute()) {
+                        // Absolute path in tar refers to path inside container
+                        // For extracting to data dir, rootfs is a subdirectory
+                        // e.g., "/sbin/charger" means "rootfs/sbin/charger" from data dir
+                        String containerPath = linkName.startsWith("/") ? linkName.substring(1) : linkName;
+                        
+                        // Get the symlink's parent directory
+                        Path symlinkParent = outputFile.toPath().getParent();
+                        // Get the absolute target path (assumes rootfs subdirectory)
+                        Path absoluteTarget = outputDir.toPath().resolve("rootfs").resolve(containerPath);
+                        
+                        try {
+                            // Make relative path from symlink location to target
+                            linkTarget = symlinkParent.relativize(absoluteTarget);
+                        } catch (IllegalArgumentException e) {
+                            // Fallback: if relativize fails, construct manually
+                            linkTarget = Paths.get(containerPath);
+                        }
+                    } else {
+                        // Already relative, use as-is
+                        linkTarget = Paths.get(linkName);
+                    }
+                    
                     try {
-                        Files.createSymbolicLink(outputFile.toPath(), Paths.get(linkName));
+                        // Delete if exists (force restore)
+                        if (Files.exists(outputFile.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                            Files.delete(outputFile.toPath());
+                        }
+                        Files.createSymbolicLink(outputFile.toPath(), linkTarget);
                     } catch (IOException e) {
-                        Log.w(TAG, "Failed to create symlink: " + entry.getName() + " -> " + linkName, e);
+                        Log.w(TAG, "Failed to create symlink: " + entry.getName() + " -> " + linkTarget, e);
                     }
                 } else {
                     // Regular file
@@ -513,12 +542,41 @@ public final class RomManager {
                     if (entry.isDirectory()) {
                         ensureDir(outputFile);
                     } else if (entry.isSymbolicLink()) {
-                        // Handle symbolic links
+                        // Handle symbolic links - convert absolute container paths to relative
                         String linkName = entry.getLinkName();
+                        Path linkTarget;
+                        
+                        if (Paths.get(linkName).isAbsolute()) {
+                            // Absolute path in tar refers to path inside container (relative to rootfs)
+                            // e.g., "/sbin/charger" means "rootfs/sbin/charger"
+                            // We need to make it relative from the symlink's location
+                            String containerPath = linkName.startsWith("/") ? linkName.substring(1) : linkName;
+                            
+                            // Get the symlink's parent directory
+                            Path symlinkParent = outputFile.toPath().getParent();
+                            // Get the absolute target path in the rootfs
+                            Path absoluteTarget = rootfsDir.toPath().resolve(containerPath);
+                            
+                            try {
+                                // Make relative path from symlink location to target
+                                linkTarget = symlinkParent.relativize(absoluteTarget);
+                            } catch (IllegalArgumentException e) {
+                                // Fallback: if relativize fails, construct manually
+                                linkTarget = Paths.get(containerPath);
+                            }
+                        } else {
+                            // Already relative, use as-is
+                            linkTarget = Paths.get(linkName);
+                        }
+                        
                         try {
-                            Files.createSymbolicLink(outputFile.toPath(), Paths.get(linkName));
+                            // Delete if exists (force restore)
+                            if (Files.exists(outputFile.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                Files.delete(outputFile.toPath());
+                            }
+                            Files.createSymbolicLink(outputFile.toPath(), linkTarget);
                         } catch (IOException e) {
-                            Log.w(TAG, "Failed to create symlink: " + entry.getName() + " -> " + linkName, e);
+                            Log.w(TAG, "Failed to create symlink: " + entry.getName() + " -> " + linkTarget, e);
                         }
                     } else {
                         // Regular file
