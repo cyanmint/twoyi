@@ -21,6 +21,11 @@ import com.topjohnwu.superuser.Shell;
 
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
 import org.apache.commons.compress.archivers.sevenz.SevenZFile;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -382,17 +387,15 @@ public final class RomManager {
         
         ContentResolver contentResolver = context.getContentResolver();
         try (OutputStream outputStream = contentResolver.openOutputStream(outputUri);
-             org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream gzipOut = 
-                new org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream(outputStream);
-             org.apache.commons.compress.archivers.tar.TarArchiveOutputStream tarOut = 
-                new org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(gzipOut)) {
+             GzipCompressorOutputStream gzipOut = new GzipCompressorOutputStream(outputStream);
+             TarArchiveOutputStream tarOut = new TarArchiveOutputStream(gzipOut)) {
             
-            tarOut.setLongFileMode(org.apache.commons.compress.archivers.tar.TarArchiveOutputStream.LONGFILE_POSIX);
+            tarOut.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
             addDirectoryToTar(tarOut, rootfsDir, "");
         }
     }
 
-    private static void addDirectoryToTar(org.apache.commons.compress.archivers.tar.TarArchiveOutputStream tarOut, 
+    private static void addDirectoryToTar(TarArchiveOutputStream tarOut, 
                                          File dir, String parentPath) throws IOException {
         File[] files = dir.listFiles();
         if (files == null) {
@@ -404,14 +407,12 @@ public final class RomManager {
             
             if (file.isDirectory()) {
                 entryName += "/";
-                org.apache.commons.compress.archivers.tar.TarArchiveEntry entry = 
-                    new org.apache.commons.compress.archivers.tar.TarArchiveEntry(file, entryName);
+                TarArchiveEntry entry = new TarArchiveEntry(file, entryName);
                 tarOut.putArchiveEntry(entry);
                 tarOut.closeArchiveEntry();
                 addDirectoryToTar(tarOut, file, entryName);
             } else if (file.isFile()) {
-                org.apache.commons.compress.archivers.tar.TarArchiveEntry entry = 
-                    new org.apache.commons.compress.archivers.tar.TarArchiveEntry(file, entryName);
+                TarArchiveEntry entry = new TarArchiveEntry(file, entryName);
                 tarOut.putArchiveEntry(entry);
                 
                 try (FileInputStream fis = new FileInputStream(file)) {
@@ -435,12 +436,10 @@ public final class RomManager {
         
         ContentResolver contentResolver = context.getContentResolver();
         try (InputStream inputStream = contentResolver.openInputStream(inputUri);
-             org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream gzipIn = 
-                new org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream(inputStream);
-             org.apache.commons.compress.archivers.tar.TarArchiveInputStream tarIn = 
-                new org.apache.commons.compress.archivers.tar.TarArchiveInputStream(gzipIn)) {
+             GzipCompressorInputStream gzipIn = new GzipCompressorInputStream(inputStream);
+             TarArchiveInputStream tarIn = new TarArchiveInputStream(gzipIn)) {
             
-            org.apache.commons.compress.archivers.tar.TarArchiveEntry entry;
+            TarArchiveEntry entry;
             while ((entry = tarIn.getNextEntry()) != null) {
                 File outputFile = new File(rootfsDir, entry.getName());
                 
