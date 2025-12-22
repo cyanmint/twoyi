@@ -506,9 +506,9 @@ public final class RomManager {
                             
                             // Check if this is a host-absolute path that includes the twoyi rootfs prefix
                             // Common patterns: /data/data/io.twoyi/rootfs/... or /data/user/0/io.twoyi/rootfs/...
-                            if (linkName.contains("/io.twoyi/rootfs/")) {
+                            int rootfsMarkerIndex = linkName.indexOf("/io.twoyi/rootfs/");
+                            if (rootfsMarkerIndex >= 0) {
                                 // Extract the path after the rootfs marker
-                                int rootfsMarkerIndex = linkName.indexOf("/io.twoyi/rootfs/");
                                 containerPath = linkName.substring(rootfsMarkerIndex + "/io.twoyi/rootfs/".length());
                                 logWriter.write("Symlink (host-abs): " + entry.getName() + " -> " + linkName + " (stripped to: " + containerPath + ")\n");
                             } else {
