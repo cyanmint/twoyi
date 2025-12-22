@@ -506,9 +506,9 @@ public final class RomManager {
                             
                             // Check if this is a host-absolute path that includes the rootfs prefix
                             // e.g., "/data/data/io.twoyi/rootfs/data/data" should become "data/data"
-                            if (linkName.contains(HOST_ROOTFS_PREFIX)) {
+                            int rootfsIndex = linkName.indexOf(HOST_ROOTFS_PREFIX);
+                            if (rootfsIndex >= 0) {
                                 // Extract the path after the rootfs prefix
-                                int rootfsIndex = linkName.indexOf(HOST_ROOTFS_PREFIX);
                                 containerPath = linkName.substring(rootfsIndex + HOST_ROOTFS_PREFIX.length());
                             } else {
                                 // Standard container-absolute path like "/sbin/charger"
