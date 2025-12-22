@@ -51,6 +51,8 @@ import io.twoyi.utils.UIHelper;
 public class SettingsActivity extends AppCompatActivity {
 
     private static final int REQUEST_GET_FILE = 1000;
+    private static final int REQUEST_IMPORT_ROOTFS = 1001;
+    private static final int REQUEST_EXPORT_ROOTFS = 1002;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -97,17 +99,26 @@ public class SettingsActivity extends AppCompatActivity {
         public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
 
+            Preference launchContainer = findPreference(R.string.settings_key_launch_container);
             Preference importApp = findPreference(R.string.settings_key_import_app);
             Preference export = findPreference(R.string.settings_key_manage_files);
 
             Preference shutdown = findPreference(R.string.settings_key_shutdown);
             Preference reboot = findPreference(R.string.settings_key_reboot);
+            
+            Preference importRootfs = findPreference(R.string.settings_key_import_rootfs);
+            Preference exportRootfs = findPreference(R.string.settings_key_export_rootfs);
             Preference replaceRom = findPreference(R.string.settings_key_replace_rom);
             Preference factoryReset = findPreference(R.string.settings_key_factory_reset);
 
             Preference donate = findPreference(R.string.settings_key_donate);
             Preference sendLog = findPreference(R.string.settings_key_sendlog);
             Preference about = findPreference(R.string.settings_key_about);
+
+            launchContainer.setOnPreferenceClickListener(preference -> {
+                UIHelper.startActivity(getContext(), io.twoyi.Render2Activity.class);
+                return true;
+            });
 
             importApp.setOnPreferenceClickListener(preference -> {
                 UIHelper.startActivity(getContext(), SelectAppActivity.class);
@@ -132,6 +143,32 @@ public class SettingsActivity extends AppCompatActivity {
                 Activity activity = getActivity();
                 activity.finishAndRemoveTask();
                 RomManager.reboot(activity);
+                return true;
+            });
+
+            importRootfs.setOnPreferenceClickListener(preference -> {
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false);
+                intent.setType("*/*");
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                try {
+                    startActivityForResult(intent, REQUEST_IMPORT_ROOTFS);
+                } catch (Throwable ignored) {
+                    Toast.makeText(getContext(), "Error", Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            });
+
+            exportRootfs.setOnPreferenceClickListener(preference -> {
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/gzip");
+                intent.putExtra(Intent.EXTRA_TITLE, "rootfs.tar.gz");
+                try {
+                    startActivityForResult(intent, REQUEST_EXPORT_ROOTFS);
+                } catch (Throwable ignored) {
+                    Toast.makeText(getContext(), "Error", Toast.LENGTH_SHORT).show();
+                }
                 return true;
             });
 
@@ -208,11 +245,7 @@ public class SettingsActivity extends AppCompatActivity {
         public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
             super.onActivityResult(requestCode, resultCode, data);
 
-            if (!(requestCode == REQUEST_GET_FILE && resultCode == Activity.RESULT_OK)) {
-                return;
-            }
-
-            if (data == null) {
+            if (resultCode != Activity.RESULT_OK || data == null) {
                 return;
             }
 
@@ -222,6 +255,21 @@ public class SettingsActivity extends AppCompatActivity {
             }
 
             Activity activity = getActivity();
+
+            if (requestCode == REQUEST_IMPORT_ROOTFS) {
+                handleImportRootfs(activity, uri);
+                return;
+            }
+
+            if (requestCode == REQUEST_EXPORT_ROOTFS) {
+                handleExportRootfs(activity, uri);
+                return;
+            }
+
+            if (requestCode != REQUEST_GET_FILE) {
+                return;
+            }
+
             ProgressDialog dialog = UIHelper.getProgressDialog(activity);
             dialog.setCancelable(false);
             dialog.show();
@@ -252,12 +300,9 @@ public class SettingsActivity extends AppCompatActivity {
                 if (romInfo.isValid()) {
 
                     String author = romInfo.author;
-                    if ("weishu".equalsIgnoreCase(author) || "twoyi".equalsIgnoreCase(author)) {
-                        Toast.makeText(activity, R.string.replace_rom_unofficial_tips, Toast.LENGTH_SHORT).show();
-                        rootfs3rd.delete();
-                        return;
-
-                    }
+                    // Allow official ROMs to be imported if not bundled
+                    // Removed restriction: if ("weishu".equalsIgnoreCase(author) || "twoyi".equalsIgnoreCase(author))
+                    
                     UIHelper.getDialogBuilder(activity)
                             .setTitle(R.string.replace_rom_confirm_title)
                             .setMessage(getString(R.string.replace_rom_confirm_message, author, romInfo.version, romInfo.desc))
@@ -281,6 +326,48 @@ public class SettingsActivity extends AppCompatActivity {
                 activity.finish();
             }));
 
+        }
+
+        private void handleImportRootfs(Activity activity, Uri uri) {
+            UIHelper.getDialogBuilder(activity)
+                    .setTitle(R.string.import_rootfs_confirm_title)
+                    .setMessage(R.string.import_rootfs_confirm_message)
+                    .setPositiveButton(R.string.i_confirm_it, (dialog, which) -> {
+                        dialog.dismiss();
+                        ProgressDialog progressDialog = UIHelper.getProgressDialog(activity);
+                        progressDialog.setCancelable(false);
+                        progressDialog.show();
+
+                        UIHelper.defer().when(() -> {
+                            RomManager.importRootfsFromTarball(activity, uri);
+                            return null;
+                        }).done(result -> {
+                            UIHelper.dismiss(progressDialog);
+                            Toast.makeText(activity, R.string.import_rootfs_success, Toast.LENGTH_LONG).show();
+                        }).fail(result -> activity.runOnUiThread(() -> {
+                            UIHelper.dismiss(progressDialog);
+                            Toast.makeText(activity, getString(R.string.import_rootfs_failed, result.getMessage()), Toast.LENGTH_LONG).show();
+                        }));
+                    })
+                    .setNegativeButton(android.R.string.cancel, (dialog, which) -> dialog.dismiss())
+                    .show();
+        }
+
+        private void handleExportRootfs(Activity activity, Uri uri) {
+            ProgressDialog progressDialog = UIHelper.getProgressDialog(activity);
+            progressDialog.setCancelable(false);
+            progressDialog.show();
+
+            UIHelper.defer().when(() -> {
+                RomManager.exportRootfsToTarball(activity, uri);
+                return null;
+            }).done(result -> {
+                UIHelper.dismiss(progressDialog);
+                Toast.makeText(activity, R.string.export_rootfs_success, Toast.LENGTH_LONG).show();
+            }).fail(result -> activity.runOnUiThread(() -> {
+                UIHelper.dismiss(progressDialog);
+                Toast.makeText(activity, getString(R.string.export_rootfs_failed, result.getMessage()), Toast.LENGTH_LONG).show();
+            }));
         }
     }
 }

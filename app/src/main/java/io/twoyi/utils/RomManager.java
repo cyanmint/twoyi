@@ -376,4 +376,95 @@ public final class RomManager {
         //noinspection ResultOfMethodCallIgnored
         file.mkdirs();
     }
+
+    public static void exportRootfsToTarball(Context context, Uri outputUri) throws IOException {
+        File rootfsDir = getRootfsDir(context);
+        
+        ContentResolver contentResolver = context.getContentResolver();
+        try (OutputStream outputStream = contentResolver.openOutputStream(outputUri);
+             org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream gzipOut = 
+                new org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream(outputStream);
+             org.apache.commons.compress.archivers.tar.TarArchiveOutputStream tarOut = 
+                new org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(gzipOut)) {
+            
+            tarOut.setLongFileMode(org.apache.commons.compress.archivers.tar.TarArchiveOutputStream.LONGFILE_POSIX);
+            addDirectoryToTar(tarOut, rootfsDir, "");
+        }
+    }
+
+    private static void addDirectoryToTar(org.apache.commons.compress.archivers.tar.TarArchiveOutputStream tarOut, 
+                                         File dir, String parentPath) throws IOException {
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return;
+        }
+
+        for (File file : files) {
+            String entryName = parentPath + file.getName();
+            
+            if (file.isDirectory()) {
+                entryName += "/";
+                org.apache.commons.compress.archivers.tar.TarArchiveEntry entry = 
+                    new org.apache.commons.compress.archivers.tar.TarArchiveEntry(file, entryName);
+                tarOut.putArchiveEntry(entry);
+                tarOut.closeArchiveEntry();
+                addDirectoryToTar(tarOut, file, entryName);
+            } else if (file.isFile()) {
+                org.apache.commons.compress.archivers.tar.TarArchiveEntry entry = 
+                    new org.apache.commons.compress.archivers.tar.TarArchiveEntry(file, entryName);
+                tarOut.putArchiveEntry(entry);
+                
+                try (FileInputStream fis = new FileInputStream(file)) {
+                    byte[] buffer = new byte[8192];
+                    int count;
+                    while ((count = fis.read(buffer)) > 0) {
+                        tarOut.write(buffer, 0, count);
+                    }
+                }
+                tarOut.closeArchiveEntry();
+            }
+        }
+    }
+
+    public static void importRootfsFromTarball(Context context, Uri inputUri) throws IOException {
+        File rootfsDir = getRootfsDir(context);
+        
+        // Remove existing rootfs
+        IOUtils.deleteDirectory(rootfsDir);
+        ensureDir(rootfsDir);
+        
+        ContentResolver contentResolver = context.getContentResolver();
+        try (InputStream inputStream = contentResolver.openInputStream(inputUri);
+             org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream gzipIn = 
+                new org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream(inputStream);
+             org.apache.commons.compress.archivers.tar.TarArchiveInputStream tarIn = 
+                new org.apache.commons.compress.archivers.tar.TarArchiveInputStream(gzipIn)) {
+            
+            org.apache.commons.compress.archivers.tar.TarArchiveEntry entry;
+            while ((entry = tarIn.getNextEntry()) != null) {
+                File outputFile = new File(rootfsDir, entry.getName());
+                
+                if (entry.isDirectory()) {
+                    ensureDir(outputFile);
+                } else {
+                    ensureDir(outputFile.getParentFile());
+                    
+                    try (FileOutputStream fos = new FileOutputStream(outputFile)) {
+                        byte[] buffer = new byte[8192];
+                        int count;
+                        while ((count = tarIn.read(buffer)) > 0) {
+                            fos.write(buffer, 0, count);
+                        }
+                    }
+                    
+                    // Preserve permissions
+                    if (entry.getMode() != 0) {
+                        outputFile.setExecutable((entry.getMode() & 0100) != 0);
+                        outputFile.setReadable((entry.getMode() & 0400) != 0);
+                        outputFile.setWritable((entry.getMode() & 0200) != 0);
+                    }
+                }
+            }
+        }
+    }
 }
