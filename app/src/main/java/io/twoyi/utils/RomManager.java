@@ -479,7 +479,7 @@ public final class RomManager {
             
             // Use Apache Commons Compress to extract tar.gz archive
             logWriter.write("=== Extraction Log ===\n");
-            int fileCount = 0, dirCount = 0, symlinkCount = 0, absoluteSymlinkCount = 0;
+            int fileCount = 0, dirCount = 0, symlinkCount = 0;
             
             try (FileInputStream fis = new FileInputStream(tempTar);
                  GzipCompressorInputStream gzis = new GzipCompressorInputStream(fis);
@@ -493,19 +493,42 @@ public final class RomManager {
                         ensureDir(outputFile);
                         dirCount++;
                     } else if (entry.isSymbolicLink()) {
-                        // Handle symbolic links - preserve them as-is
+                        // Handle symbolic links - convert absolute container paths to relative
                         String linkName = entry.getLinkName();
-                        Path linkTarget = Paths.get(linkName);
+                        Path linkTarget;
                         
                         if (Paths.get(linkName).isAbsolute()) {
-                            // Absolute symlink detected - warn user
-                            String warning = "WARNING: Absolute symlink detected: " + entry.getName() + " -> " + linkTarget;
-                            Log.w(TAG, warning);
-                            logWriter.write(warning + "\n");
-                            logWriter.write("  Keeping as-is, but this may cause issues. Use relative symlinks in tarball.\n");
-                            absoluteSymlinkCount++;
+                            // Absolute path in tar - need to determine what it refers to
+                            String containerPath;
+                            
+                            // Check if this is a host-absolute path that includes the rootfs prefix
+                            // e.g., "/data/data/io.twoyi/rootfs/data/data" should become "data/data"
+                            if (linkName.contains("/data/data/io.twoyi/rootfs/")) {
+                                // Extract the path after the rootfs prefix
+                                int rootfsIndex = linkName.indexOf("/data/data/io.twoyi/rootfs/");
+                                containerPath = linkName.substring(rootfsIndex + "/data/data/io.twoyi/rootfs/".length());
+                            } else {
+                                // Standard container-absolute path like "/sbin/charger"
+                                // This means "rootfs/sbin/charger"
+                                containerPath = linkName.startsWith("/") ? linkName.substring(1) : linkName;
+                            }
+                            
+                            // Get the symlink's parent directory
+                            Path symlinkParent = outputFile.toPath().getParent();
+                            // Get the absolute target path in the rootfs
+                            Path absoluteTarget = rootfsDir.toPath().resolve(containerPath);
+                            
+                            try {
+                                // Make relative path from symlink location to target
+                                linkTarget = symlinkParent.relativize(absoluteTarget);
+                            } catch (IllegalArgumentException e) {
+                                // Fallback: if relativize fails, construct manually
+                                linkTarget = Paths.get(containerPath);
+                            }
+                            logWriter.write("Symlink (abs->rel): " + entry.getName() + " -> " + linkName + " => " + linkTarget + "\n");
                         } else {
-                            // Relative symlink - OK
+                            // Already relative, use as-is
+                            linkTarget = Paths.get(linkName);
                             logWriter.write("Symlink (rel): " + entry.getName() + " -> " + linkTarget + "\n");
                         }
                         
@@ -551,13 +574,6 @@ public final class RomManager {
             logWriter.write("Files extracted: " + fileCount + "\n");
             logWriter.write("Directories created: " + dirCount + "\n");
             logWriter.write("Symlinks created: " + symlinkCount + "\n");
-            if (absoluteSymlinkCount > 0) {
-                logWriter.write("\n=== WARNING ===\n");
-                logWriter.write("Absolute symlinks detected: " + absoluteSymlinkCount + "\n");
-                logWriter.write("Absolute symlinks may not work correctly in all contexts.\n");
-                logWriter.write("Please regenerate the tarball with relative symlinks only.\n");
-                Log.w(TAG, "Import completed with " + absoluteSymlinkCount + " absolute symlink(s). Use relative symlinks for best compatibility.");
-            }
             logWriter.write("Import completed successfully\n");
             
         } catch (IOException e) {
