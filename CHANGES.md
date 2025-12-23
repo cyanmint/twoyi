@@ -9,6 +9,45 @@
 
 This document summarizes all the changes made to implement the requested features.
 
+## 0. Open Source OpenGL Renderer Implementation
+
+**New Files:**
+- `app/src/main/cpp/opengl_render/OpenglRender.cpp` - C++ implementation
+- `app/src/main/cpp/opengl_render/OpenglRender.h` - C API header
+- `app/src/main/cpp/opengl_render/CMakeLists.txt` - Build configuration
+- `app/src/main/cpp/opengl_render/README.md` - Technical documentation
+
+**Removed:**
+- `app/src/main/jniLibs/arm64-v8a/libOpenglRender.so` - Prebuilt closed-source binary
+
+**Modified:**
+- `app/build.gradle` - Added CMake external native build configuration
+- `.gitignore` - Added exclusion for old prebuilt library backups
+- `README.md` - Added OpenGL Renderer section documenting the open source implementation
+
+**Changes:**
+- Replaced the prebuilt closed-source `libOpenglRender.so` with an open source implementation
+- Implemented using EGL and OpenGL ES 3.0 for native Android graphics
+- All 6 required API functions implemented with proper signatures:
+  - `startOpenGLRenderer()` - Initialize renderer with EGL context and render thread
+  - `setNativeWindow()` - Update native window surface
+  - `resetSubWindow()` - Reconfigure window and framebuffer dimensions
+  - `repaintOpenGLDisplay()` - Request display repaint
+  - `destroyOpenGLSubwindow()` - Cleanup and shutdown renderer
+  - `removeSubWindow()` - Remove specific window surface
+- Thread-safe implementation with dedicated render thread
+- FBO-based rendering for flexible off-screen composition
+- Integrated with CMake build system, automatically built by Gradle
+- Library sizes: 18KB (debug), 14KB (release)
+- Full compatibility with existing Rust FFI bindings
+
+**Benefits:**
+- Fully open source and transparent implementation
+- No dependency on closed-source binaries
+- Clean-room implementation using standard Android APIs
+- Can be audited, modified, and improved by the community
+- Simpler architecture focused on actual use case
+
 ## 1. GitHub Actions Workflow
 
 **File:** `.github/workflows/build.yml`

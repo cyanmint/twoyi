@@ -71,6 +71,10 @@ Twoyi contains two parts:
 
 This repository contains the twoyi app, and the twoyi ROM is currently being turned into open-source.  Therefore, at this moment, the ROM cannot be compiled from source yet.
 
+### OpenGL Renderer
+
+The OpenGL rendering component (`libOpenglRender.so`) has been **reimplemented as open source** using EGL and OpenGL ES 3.0. The original prebuilt closed-source library has been replaced with a clean-room implementation. See `app/src/main/cpp/opengl_render/README.md` for technical details.
+
 ### Build the App manually
 
 #### Install Rust
