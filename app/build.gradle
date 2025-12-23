@@ -59,6 +59,9 @@ android {
 }
 
 task cargoBuild {
+    // Depend on CMake build tasks to ensure libOpenglRender.so is built first
+    dependsOn 'externalNativeBuildDebug', 'externalNativeBuildRelease'
+    
     doLast {
         exec {
             //切换到sh文件所在的目录，执行脚本
