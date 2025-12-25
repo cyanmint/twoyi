@@ -50,20 +50,20 @@ pub fn renderer_init(
     fps: jint,
 ) {
     debug!("renderer_init");
-    let window = unsafe { ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface) };
+    let window_ptr = unsafe { ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface) };
 
-    let window = match std::ptr::NonNull::new(window) {
-        Some(x) => x,
-        None => {
-            error!("ANativeWindow_fromSurface was null!");
-            return;
-        }
-    };
+    if window_ptr.is_null() {
+        error!("ANativeWindow_fromSurface was null!");
+        return;
+    }
 
-    let window = unsafe { ndk::native_window::NativeWindow::from_ptr(window) };
-
-    let surface_width = window.width();
-    let surface_height = window.height();
+    // Get window dimensions before acquiring
+    let surface_width;
+    let surface_height;
+    unsafe {
+        surface_width = ndk_sys::ANativeWindow_getWidth(window_ptr);
+        surface_height = ndk_sys::ANativeWindow_getHeight(window_ptr);
+    }
     
     // Use the virtual display dimensions passed from Java
     let virtual_width = width;
@@ -76,27 +76,42 @@ pub fn renderer_init(
 
     if RENDERER_STARTED.compare_exchange(false, true, 
         Ordering::Acquire, Ordering::Relaxed).is_err() {
-        let win = window.ptr().as_ptr() as *mut c_void;
+        // Renderer already started, just reset the window
         unsafe {
-            renderer_bindings::setNativeWindow(win);
-            renderer_bindings::resetSubWindow(win, 0, 0, surface_width, surface_height, 
+            renderer_bindings::setNativeWindow(window_ptr as *mut c_void);
+            renderer_bindings::resetSubWindow(window_ptr as *mut c_void, 0, 0, surface_width, surface_height, 
                                              virtual_width, virtual_height, 1.0, 0.0);
         }
     } else {
+        // First time initialization
+        // Acquire the window to keep it alive for the renderer
+        // The renderer will acquire it again in startOpenGLRenderer, so we don't need to keep our reference
+        unsafe {
+            ndk_sys::ANativeWindow_acquire(window_ptr);
+        }
+        
         input::start_input_system(virtual_width, virtual_height);
 
+        // Spawn thread to start renderer
+        // Note: We pass the window as usize to make it Send-safe for the thread
+        let window_addr = window_ptr as usize;
         thread::spawn(move || {
-            let win = window.ptr().as_ptr() as *mut c_void;
-            info!("win: {:#?}", win);
+            let win_ptr = window_addr as *mut ndk_sys::ANativeWindow;
+            info!("Starting OpenGL renderer in thread, win: {:#?}", win_ptr);
             unsafe {
-                renderer_bindings::startOpenGLRenderer(
-                    win,
+                let result = renderer_bindings::startOpenGLRenderer(
+                    win_ptr as *mut c_void,
                     virtual_width,
                     virtual_height,
                     xdpi as i32,
                     ydpi as i32,
                     fps as i32,
                 );
+                if result != 0 {
+                    error!("startOpenGLRenderer failed with result: {}", result);
+                    // Release the window if renderer failed to start
+                    ndk_sys::ANativeWindow_release(win_ptr);
+                }
             }
         });
 
@@ -128,8 +143,12 @@ pub fn renderer_reset_window(
 ) {
     debug!("reset_window: surface={}x{}, framebuffer={}x{}", _width, _height, _fb_width, _fb_height);
     unsafe {
-        let window = ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface);
-        renderer_bindings::resetSubWindow(window as *mut c_void, 0, 0, _width, _height, _fb_width, _fb_height, 1.0, 0.0);
+        let window_ptr = ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface);
+        if !window_ptr.is_null() {
+            renderer_bindings::resetSubWindow(window_ptr as *mut c_void, 0, 0, _width, _height, _fb_width, _fb_height, 1.0, 0.0);
+        } else {
+            error!("ANativeWindow_fromSurface returned null in reset_window");
+        }
     }
 }
 
@@ -138,8 +157,12 @@ pub fn renderer_remove_window(env: JNIEnv, _clz: jclass, surface: jobject) {
     debug!("renderer_remove_window");
 
     unsafe {
-        let window = ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface);
-        renderer_bindings::removeSubWindow(window as *mut c_void);
+        let window_ptr = ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface);
+        if !window_ptr.is_null() {
+            renderer_bindings::removeSubWindow(window_ptr as *mut c_void);
+        } else {
+            error!("ANativeWindow_fromSurface returned null in remove_window");
+        }
     }
 }
 
