@@ -1,7 +1,12 @@
 fn main() {
     println!("cargo:rustc-link-search=native=../src/main/jniLibs/arm64-v8a");
     
-    // Note: We do NOT set a custom entry point because it causes segfaults
-    // Users should use the wrapper script (twoyi) which invokes via linker64
-    // Direct execution of .so files requires proper ELF initialization
+    // Compile interp.c to add INTERP segment for direct execution
+    cc::Build::new()
+        .file("src/interp.c")
+        .compile("interp");
+    
+    // The entry point is set via RUSTFLAGS in build_rs.sh: -Wl,-e,main
+    // The interp.c file adds the .interp section needed for direct execution
+    // This makes the library a PIE executable that can still be loaded by JNI
 }
