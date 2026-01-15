@@ -74,10 +74,6 @@ tasks.whenTaskAdded { task ->
     if ((task.name == 'javaPreCompileDebug' || task.name == 'javaPreCompileRelease')) {
         task.dependsOn 'cargoBuild'
     }
-    // Ensure native build happens before cargo build
-    if (task.name == 'cargoBuild') {
-        task.dependsOn 'externalNativeBuildRelease'
-    }
 }
 
 dependencies {
