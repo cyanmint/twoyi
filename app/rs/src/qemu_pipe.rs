@@ -40,34 +40,57 @@ const DEFAULT_FB_HEIGHT: u32 = 1080;
 const OPENGLES_SERVICE: &str = "opengles";
 const OPENGLES2_SERVICE: &str = "opengles2"; 
 const OPENGLES3_SERVICE: &str = "opengles3";
-const PIPE_SERVICE: &str = "pipe";
 
 // OpenGL ES renderControl command opcodes (from goldfish-opengl)
+// Using original goldfish naming for easier correlation with protocol docs
+#[allow(non_upper_case_globals)]
 const OP_rcGetRendererVersion: u32 = 10000;
+#[allow(non_upper_case_globals)]
 const OP_rcGetEGLVersion: u32 = 10001;
+#[allow(non_upper_case_globals, dead_code)]
 const OP_rcQueryEGLString: u32 = 10002;
+#[allow(non_upper_case_globals, dead_code)]
 const OP_rcGetGLString: u32 = 10003;
+#[allow(non_upper_case_globals)]
 const OP_rcGetNumConfigs: u32 = 10004;
+#[allow(non_upper_case_globals, dead_code)]
 const OP_rcGetConfigs: u32 = 10005;
+#[allow(non_upper_case_globals, dead_code)]
 const OP_rcChooseConfig: u32 = 10006;
+#[allow(non_upper_case_globals)]
 const OP_rcGetFBParam: u32 = 10007;
+#[allow(non_upper_case_globals)]
 const OP_rcCreateContext: u32 = 10008;
+#[allow(non_upper_case_globals)]
 const OP_rcDestroyContext: u32 = 10009;
+#[allow(non_upper_case_globals)]
 const OP_rcCreateWindowSurface: u32 = 10010;
+#[allow(non_upper_case_globals)]
 const OP_rcDestroyWindowSurface: u32 = 10011;
+#[allow(non_upper_case_globals)]
 const OP_rcCreateColorBuffer: u32 = 10012;
+#[allow(non_upper_case_globals)]
 const OP_rcOpenColorBuffer: u32 = 10013;
+#[allow(non_upper_case_globals)]
 const OP_rcCloseColorBuffer: u32 = 10014;
+#[allow(non_upper_case_globals)]
 const OP_rcSetWindowColorBuffer: u32 = 10015;
+#[allow(non_upper_case_globals)]
 const OP_rcFlushWindowColorBuffer: u32 = 10016;
+#[allow(non_upper_case_globals)]
 const OP_rcMakeCurrent: u32 = 10017;
+#[allow(non_upper_case_globals)]
 const OP_rcFBPost: u32 = 10018;
+#[allow(non_upper_case_globals)]
 const OP_rcFBSetSwapInterval: u32 = 10019;
+#[allow(non_upper_case_globals)]
 const OP_rcBindTexture: u32 = 10020;
+#[allow(non_upper_case_globals)]
 const OP_rcBindRenderbuffer: u32 = 10021;
 
 /// Color buffer information
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ColorBuffer {
     id: u32,
     width: u32,
@@ -260,6 +283,7 @@ fn handle_opengl_commands(stream: &mut unix_socket::UnixStream) {
 }
 
 /// Process OpenGL command data and return response
+#[allow(non_upper_case_globals)]
 fn process_opengl_command(data: &[u8]) -> Vec<u8> {
     if data.len() < 4 {
         debug!("Command too short: {} bytes", data.len());
