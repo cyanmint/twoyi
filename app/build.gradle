@@ -30,13 +30,6 @@ android {
             abiFilters "arm64-v8a"
         }
         
-        externalNativeBuild {
-            cmake {
-                cppFlags "-std=c++14"
-                arguments "-DANDROID_STL=c++_shared"
-            }
-        }
-        
         archivesBaseName = "twoyi_${versionName}"
     }
 
@@ -50,12 +43,6 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
-    }
-    
-    externalNativeBuild {
-        cmake {
-            path "native/openglrender/CMakeLists.txt"
-        }
     }
 }
 

@@ -13,7 +13,7 @@ use std::ffi::c_void;
 use android_logger::Config;
 
 mod input;
-mod renderer_bindings;
+mod opengl_renderer;
 mod core;
 
 // Reference the interp symbol from C to force it to be linked
