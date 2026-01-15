@@ -49,7 +49,7 @@ jobs:
 
       - name: Install cargo-xdk
         if: steps.cache-cargo-xdk.outputs.cache-hit != 'true'
-        run: cargo install cargo-xdk --version 2.12.6
+        run: cargo install cargo-xdk
       
       - name: Verify cargo-xdk installation
         run: cargo xdk --version
@@ -58,8 +58,8 @@ jobs:
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r21e
-          add-to-path: true
+          ndk-version: r27c
+          add-to-path: false
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
