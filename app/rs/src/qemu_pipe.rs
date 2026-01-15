@@ -142,17 +142,20 @@ fn start_pipe_listener(path: &'static str) {
         for stream in listener.incoming() {
             match stream {
                 Ok(mut stream) => {
-                    debug!("Pipe client connected to {}", path);
+                    let client_id = std::process::id() as u64 * 1000000 + std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() as u64;
+                    info!("[CLIENT_{}] Pipe client connected to {}", client_id, path);
                     
                     // Spawn a thread to handle this client
                     let is_gl = is_direct_opengl;
                     thread::spawn(move || {
                         if is_gl {
                             // Direct OpenGL service - no service name negotiation needed
-                            handle_opengl_service_direct(&mut stream);
+                            info!("[CLIENT_{}] Using direct OpenGL service mode", client_id);
+                            handle_opengl_service_direct(&mut stream, client_id);
                         } else {
                             // Generic pipe - need to read service name first
-                            handle_pipe_client(&mut stream);
+                            info!("[CLIENT_{}] Using generic pipe mode with service negotiation", client_id);
+                            handle_pipe_client(&mut stream, client_id);
                         }
                     });
                 }
@@ -222,86 +225,116 @@ fn handle_pipe_client(stream: &mut unix_socket::UnixStream) {
     if service_name == OPENGLES_SERVICE || 
        service_name == OPENGLES2_SERVICE || 
        service_name == OPENGLES3_SERVICE {
-        handle_opengl_service(stream, service_name);
+        info!("[CLIENT_{}] Matched OpenGL service, starting handler", client_id);
+        handle_opengl_service(stream, service_name, client_id);
     } else {
-        warn!("Unknown service requested: {}", service);
+        error!("[CLIENT_{}] Unknown service requested: '{}', sending error response", client_id, service);
         // Send error response
         let _ = stream.write_all(&[0xff, 0xff, 0xff, 0xff]);
     }
 }
 
 /// Handle OpenGL ES service requests for direct connections (no service name exchange)
-fn handle_opengl_service_direct(stream: &mut unix_socket::UnixStream) {
-    info!("Handling direct OpenGL service connection");
+fn handle_opengl_service_direct(stream: &mut unix_socket::UnixStream, client_id: u64) {
+    info!("[CLIENT_{}] ========== DIRECT OPENGL SERVICE CONNECTION ==========", client_id);
     
     // For direct connections, start processing commands immediately
-    handle_opengl_commands(stream);
+    handle_opengl_commands(stream, client_id);
 }
 
 /// Handle OpenGL ES service requests (after service name negotiation)
-fn handle_opengl_service(stream: &mut unix_socket::UnixStream, service: &str) {
-    info!("Handling OpenGL service after negotiation: {}", service);
+fn handle_opengl_service(stream: &mut unix_socket::UnixStream, service: &str, client_id: u64) {
+    info!("[CLIENT_{}] ========== OPENGL SERVICE AFTER NEGOTIATION: {} ==========", client_id, service);
     
     // Send success response (0x00000000) to indicate service is available
+    info!("[CLIENT_{}] Sending success response (4 bytes: 0x00000000)", client_id);
     if let Err(e) = stream.write_all(&[0x00, 0x00, 0x00, 0x00]) {
-        error!("Failed to send success response: {}", e);
+        error!("[CLIENT_{}] Failed to send success response: {}", client_id, e);
         return;
     }
     
-    info!("Success response sent, starting command loop");
-    handle_opengl_commands(stream);
+    info!("[CLIENT_{}] Success response sent successfully, starting command loop", client_id);
+    handle_opengl_commands(stream, client_id);
 }
 
 /// Process OpenGL command stream
-fn handle_opengl_commands(stream: &mut unix_socket::UnixStream) {
-    info!("Starting OpenGL command processing loop");
+fn handle_opengl_commands(stream: &mut unix_socket::UnixStream, client_id: u64) {
+    info!("[CLIENT_{}] ========== STARTING COMMAND PROCESSING LOOP ==========", client_id);
     let mut buffer = vec![0u8; COMMAND_BUFFER_SIZE];
+    let mut command_count = 0u64;
     
     loop {
+        info!("[CLIENT_{}] Waiting for command #{} ...", client_id, command_count);
         match stream.read(&mut buffer) {
             Ok(0) => {
-                info!("OpenGL service client disconnected gracefully");
+                info!("[CLIENT_{}] ========== CLIENT DISCONNECTED GRACEFULLY ==========", client_id);
+                info!("[CLIENT_{}] Total commands processed: {}", client_id, command_count);
                 break;
             }
             Ok(n) => {
-                info!("Received {} bytes from OpenGL service", n);
+                command_count += 1;
+                info!("[CLIENT_{}] ========== COMMAND #{} RECEIVED ({} bytes) ==========", client_id, command_count, n);
+                
+                // Log the raw data in hex
+                if n <= 64 {
+                    info!("[CLIENT_{}] Raw data (all {} bytes): {:02x?}", client_id, n, &buffer[..n]);
+                } else {
+                    info!("[CLIENT_{}] Raw data (first 64 of {} bytes): {:02x?}...", client_id, n, &buffer[..64]);
+                }
                 
                 // Process the command and send response
-                let response = process_opengl_command(&buffer[..n]);
+                let response = process_opengl_command(&buffer[..n], client_id, command_count);
                 
-                info!("Sending {} byte response", response.len());
+                info!("[CLIENT_{}] ========== SENDING RESPONSE FOR COMMAND #{} ({} bytes) ==========", 
+                      client_id, command_count, response.len());
+                if response.len() <= 64 {
+                    info!("[CLIENT_{}] Response data (all {} bytes): {:02x?}", client_id, response.len(), &response);
+                } else {
+                    info!("[CLIENT_{}] Response data (first 64 of {} bytes): {:02x?}...", client_id, response.len(), &response[..64]);
+                }
+                
                 if let Err(e) = stream.write_all(&response) {
-                    error!("Failed to send response: {}", e);
+                    error!("[CLIENT_{}] ========== FAILED TO SEND RESPONSE: {} ==========", client_id, e);
                     break;
                 }
-                info!("Response sent successfully");
+                info!("[CLIENT_{}] Response sent successfully for command #{}", client_id, command_count);
             }
             Err(e) => {
-                error!("Error reading from OpenGL service: {}", e);
+                error!("[CLIENT_{}] ========== ERROR READING COMMAND: {} ==========", client_id, e);
                 break;
             }
         }
     }
-    info!("Exiting OpenGL command processing loop");
+    info!("[CLIENT_{}] ========== EXITING COMMAND PROCESSING LOOP ==========", client_id);
 }
 
 /// Process OpenGL command data and return response
 #[allow(non_upper_case_globals)]
-fn process_opengl_command(data: &[u8]) -> Vec<u8> {
+fn process_opengl_command(data: &[u8], client_id: u64, command_num: u64) -> Vec<u8> {
     if data.len() < 4 {
-        debug!("Command too short: {} bytes", data.len());
+        error!("[CLIENT_{}][CMD_{}] Command too short: {} bytes (need at least 4 for opcode)", 
+               client_id, command_num, data.len());
         return vec![0x00, 0x00, 0x00, 0x00]; // Error response
     }
     
     let opcode = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-    debug!("Processing OpenGL opcode: 0x{:08x}", opcode);
+    info!("[CLIENT_{}][CMD_{}] ========== PROCESSING OPCODE: 0x{:08x} ({}) ==========", 
+          client_id, command_num, opcode, opcode);
+    
+    // Log data size if present
+    if data.len() >= 8 {
+        let size = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+        info!("[CLIENT_{}][CMD_{}] Command size field: {} bytes", client_id, command_num, size);
+    }
     
     match opcode {
         OP_rcGetRendererVersion => {
             // Return a fake renderer version
-            info!("rcGetRendererVersion");
+            info!("[CLIENT_{}][CMD_{}] rcGetRendererVersion -> returning version 1", client_id, command_num);
             let version: u32 = 1; // Version 1
-            version.to_le_bytes().to_vec()
+            let response = version.to_le_bytes().to_vec();
+            info!("[CLIENT_{}][CMD_{}] rcGetRendererVersion response: {:02x?}", client_id, command_num, response);
+            response
         }
         
         OP_rcGetEGLVersion => {
@@ -325,16 +358,29 @@ fn process_opengl_command(data: &[u8]) -> Vec<u8> {
         OP_rcGetFBParam => {
             if data.len() >= 8 {
                 let param = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-                info!("rcGetFBParam: param={}", param);
-                // Return framebuffer parameters
-                // TODO: Get actual dimensions from display configuration
                 let value: u32 = match param {
-                    0 => DEFAULT_FB_WIDTH,  // width
-                    1 => DEFAULT_FB_HEIGHT, // height
-                    _ => 0,
+                    0 => {
+                        info!("[CLIENT_{}][CMD_{}] rcGetFBParam: param={} (WIDTH) -> {}", 
+                              client_id, command_num, param, DEFAULT_FB_WIDTH);
+                        DEFAULT_FB_WIDTH
+                    },
+                    1 => {
+                        info!("[CLIENT_{}][CMD_{}] rcGetFBParam: param={} (HEIGHT) -> {}", 
+                              client_id, command_num, param, DEFAULT_FB_HEIGHT);
+                        DEFAULT_FB_HEIGHT
+                    },
+                    _ => {
+                        info!("[CLIENT_{}][CMD_{}] rcGetFBParam: param={} (UNKNOWN) -> 0", 
+                              client_id, command_num, param);
+                        0
+                    },
                 };
-                value.to_le_bytes().to_vec()
+                let response = value.to_le_bytes().to_vec();
+                info!("[CLIENT_{}][CMD_{}] rcGetFBParam response: {:02x?}", client_id, command_num, response);
+                response
             } else {
+                error!("[CLIENT_{}][CMD_{}] rcGetFBParam: insufficient data ({} bytes)", 
+                       client_id, command_num, data.len());
                 vec![0x00, 0x00, 0x00, 0x00]
             }
         }
@@ -362,8 +408,12 @@ fn process_opengl_command(data: &[u8]) -> Vec<u8> {
                 };
                 COLOR_BUFFERS.lock().unwrap().insert(buffer_id, buffer);
                 
-                info!("Created color buffer with ID: {}", buffer_id);
-                buffer_id.to_le_bytes().to_vec()
+                info!("[CLIENT_{}][CMD_{}] Created color buffer with ID: {} (total buffers: {})", 
+                      client_id, command_num, buffer_id, COLOR_BUFFERS.lock().unwrap().len());
+                let response = buffer_id.to_le_bytes().to_vec();
+                info!("[CLIENT_{}][CMD_{}] rcCreateColorBuffer response: buffer_id={}, bytes={:02x?}", 
+                      client_id, command_num, buffer_id, response);
+                response
             } else {
                 vec![0x00, 0x00, 0x00, 0x00]
             }
@@ -372,13 +422,18 @@ fn process_opengl_command(data: &[u8]) -> Vec<u8> {
         OP_rcOpenColorBuffer => {
             if data.len() >= 8 {
                 let buffer_id = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-                info!("rcOpenColorBuffer: {}", buffer_id);
                 
                 // Check if buffer exists
                 let buffers = COLOR_BUFFERS.lock().unwrap();
                 let result: u32 = if buffers.contains_key(&buffer_id) { 0 } else { 1 };
-                result.to_le_bytes().to_vec()
+                info!("[CLIENT_{}][CMD_{}] rcOpenColorBuffer: buffer_id={}, exists={}, result={}", 
+                      client_id, command_num, buffer_id, buffers.contains_key(&buffer_id), result);
+                let response = result.to_le_bytes().to_vec();
+                info!("[CLIENT_{}][CMD_{}] rcOpenColorBuffer response: {:02x?}", client_id, command_num, response);
+                response
             } else {
+                error!("[CLIENT_{}][CMD_{}] rcOpenColorBuffer: insufficient data ({} bytes)", 
+                       client_id, command_num, data.len());
                 vec![0x01, 0x00, 0x00, 0x00] // Error
             }
         }
@@ -421,13 +476,26 @@ fn process_opengl_command(data: &[u8]) -> Vec<u8> {
         
         OP_rcCreateContext | OP_rcDestroyContext | 
         OP_rcCreateWindowSurface | OP_rcDestroyWindowSurface => {
-            debug!("Context/Surface operation: 0x{:08x}", opcode);
+            let op_name = match opcode {
+                OP_rcCreateContext => "rcCreateContext",
+                OP_rcDestroyContext => "rcDestroyContext",
+                OP_rcCreateWindowSurface => "rcCreateWindowSurface",
+                OP_rcDestroyWindowSurface => "rcDestroyWindowSurface",
+                _ => "Unknown",
+            };
+            info!("[CLIENT_{}][CMD_{}] {} (0x{:08x}) - returning fake handle/success", 
+                  client_id, command_num, op_name, opcode);
             // Return success/fake handle
-            vec![0x01, 0x00, 0x00, 0x00]
+            let response = vec![0x01, 0x00, 0x00, 0x00];
+            info!("[CLIENT_{}][CMD_{}] {} response: {:02x?}", client_id, command_num, op_name, response);
+            response
         }
         
         _ => {
-            debug!("Unknown opcode: 0x{:08x}, returning success", opcode);
+            error!("[CLIENT_{}][CMD_{}] !!!!! UNKNOWN OPCODE: 0x{:08x} ({}) !!!!!", 
+                   client_id, command_num, opcode, opcode);
+            error!("[CLIENT_{}][CMD_{}] Data dump: {:02x?}", client_id, command_num, data);
+            error!("[CLIENT_{}][CMD_{}] Returning generic success response", client_id, command_num);
             // Return success for unknown commands to keep things moving
             vec![0x00, 0x00, 0x00, 0x00]
         }
