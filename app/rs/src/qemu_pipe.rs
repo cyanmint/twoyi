@@ -171,46 +171,50 @@ fn start_pipe_listener(path: &'static str) {
 }
 
 /// Handle a single pipe client connection
-fn handle_pipe_client(stream: &mut unix_socket::UnixStream) {
+fn handle_pipe_client(stream: &mut unix_socket::UnixStream, client_id: u64) {
     // Read the service name (null-terminated string)
     let mut service_name = Vec::new();
     let mut buf = [0u8; 1];
     
+    info!("[CLIENT_{}] Reading service name...", client_id);
     loop {
         match stream.read(&mut buf) {
             Ok(0) => {
-                debug!("Client disconnected during service name read");
+                info!("[CLIENT_{}] Client disconnected during service name read", client_id);
                 return;
             }
             Ok(_) => {
                 if buf[0] == 0 {
                     // Null terminator found
+                    info!("[CLIENT_{}] Null terminator received, service name complete", client_id);
                     break;
                 }
                 service_name.push(buf[0]);
+                info!("[CLIENT_{}] Service name byte: 0x{:02x} ('{}')", client_id, buf[0], 
+                      if buf[0].is_ascii_graphic() { buf[0] as char } else { '?' });
             }
             Err(e) => {
-                warn!("Error reading service name: {}", e);
+                error!("[CLIENT_{}] Error reading service name: {}", client_id, e);
                 return;
             }
         }
         
         // Prevent infinite read
         if service_name.len() > MAX_SERVICE_NAME_LENGTH {
-            warn!("Service name too long, disconnecting client");
+            error!("[CLIENT_{}] Service name too long ({} bytes), disconnecting", client_id, service_name.len());
             return;
         }
     }
     
-    let service = match String::from_utf8(service_name) {
+    let service = match String::from_utf8(service_name.clone()) {
         Ok(s) => s,
         Err(_) => {
-            warn!("Invalid UTF-8 in service name");
+            error!("[CLIENT_{}] Invalid UTF-8 in service name: {:?}", client_id, service_name);
             return;
         }
     };
     
-    info!("Client requesting service: '{}'", service);
+    info!("[CLIENT_{}] Client requesting service: '{}' (raw bytes: {:02x?})", client_id, service, service_name);
     
     // Handle different services
     // Service names can be:
