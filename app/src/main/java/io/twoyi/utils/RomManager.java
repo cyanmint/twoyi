@@ -78,6 +78,21 @@ public final class RomManager {
         ensureDir(new File(devDir, "input"));
         ensureDir(new File(devDir, "socket"));
         ensureDir(new File(devDir, "maps"));
+        
+        // Create qemu_pipe placeholder - the actual pipe is created by native code
+        // This ensures the directory structure exists for the Unix socket
+        File qemuPipeFile = new File(devDir, "qemu_pipe");
+        if (qemuPipeFile.exists() && !qemuPipeFile.isDirectory()) {
+            //noinspection ResultOfMethodCallIgnored
+            qemuPipeFile.delete();
+        }
+        
+        // Also create goldfish_pipe as an alias (newer kernels use this name)
+        File goldfishPipeFile = new File(devDir, "goldfish_pipe");
+        if (goldfishPipeFile.exists() && !goldfishPipeFile.isDirectory()) {
+            //noinspection ResultOfMethodCallIgnored
+            goldfishPipeFile.delete();
+        }
 
         ensureDir(new File(context.getDataDir(), "socket"));
 

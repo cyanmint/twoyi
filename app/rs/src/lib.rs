@@ -15,6 +15,7 @@ use android_logger::Config;
 mod input;
 mod opengl_renderer;
 mod core;
+mod qemu_pipe;
 
 // Reference the interp symbol from C to force it to be linked
 extern "C" {

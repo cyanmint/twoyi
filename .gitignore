@@ -15,3 +15,8 @@
 local.properties
 dl.sh
 *.class
+
+# Debug files
+bugreport.zip
+*.txt
+tombstones/
