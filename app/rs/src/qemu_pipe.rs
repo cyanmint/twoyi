@@ -20,6 +20,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::collections::HashMap;
+use once_cell::sync::Lazy;
 
 const PIPE_PATH: &str = "/data/data/io.twoyi/rootfs/dev/qemu_pipe";
 const GOLDFISH_PIPE_PATH: &str = "/data/data/io.twoyi/rootfs/dev/goldfish_pipe";
@@ -28,6 +29,12 @@ const GOLDFISH_PIPE_PATH: &str = "/data/data/io.twoyi/rootfs/dev/goldfish_pipe";
 const OPENGLES_PATH: &str = "/data/data/io.twoyi/rootfs/opengles";
 const OPENGLES2_PATH: &str = "/data/data/io.twoyi/rootfs/opengles2";
 const OPENGLES3_PATH: &str = "/data/data/io.twoyi/rootfs/opengles3";
+
+// Protocol constants
+const MAX_SERVICE_NAME_LENGTH: usize = 256;
+const COMMAND_BUFFER_SIZE: usize = 8192;
+const DEFAULT_FB_WIDTH: u32 = 1920;
+const DEFAULT_FB_HEIGHT: u32 = 1080;
 
 // QEMU pipe service names (WITHOUT leading slash - the pipe protocol expects plain names)
 const OPENGLES_SERVICE: &str = "opengles";
@@ -68,14 +75,11 @@ struct ColorBuffer {
     format: u32,
 }
 
-/// Global state for color buffers
 static COLOR_BUFFERS: Lazy<Mutex<HashMap<u32, ColorBuffer>>> = Lazy::new(|| {
     Mutex::new(HashMap::new())
 });
 
 static NEXT_BUFFER_ID: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(1));
-
-use once_cell::sync::Lazy;
 
 /// Start the QEMU pipe server
 /// This creates Unix sockets for OpenGL ES services that gralloc expects
@@ -166,7 +170,7 @@ fn handle_pipe_client(stream: &mut unix_socket::UnixStream) {
         }
         
         // Prevent infinite read
-        if service_name.len() > 256 {
+        if service_name.len() > MAX_SERVICE_NAME_LENGTH {
             warn!("Service name too long, disconnecting client");
             return;
         }
@@ -228,7 +232,7 @@ fn handle_opengl_service(stream: &mut unix_socket::UnixStream, service: &str) {
 /// Process OpenGL command stream
 fn handle_opengl_commands(stream: &mut unix_socket::UnixStream) {
     // Now handle OpenGL command stream
-    let mut buffer = vec![0u8; 8192];
+    let mut buffer = vec![0u8; COMMAND_BUFFER_SIZE];
     
     loop {
         match stream.read(&mut buffer) {
@@ -295,10 +299,11 @@ fn process_opengl_command(data: &[u8]) -> Vec<u8> {
             if data.len() >= 8 {
                 let param = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
                 info!("rcGetFBParam: param={}", param);
-                // Return default framebuffer parameters
+                // Return framebuffer parameters
+                // TODO: Get actual dimensions from display configuration
                 let value: u32 = match param {
-                    0 => 1920, // width
-                    1 => 1080, // height
+                    0 => DEFAULT_FB_WIDTH,  // width
+                    1 => DEFAULT_FB_HEIGHT, // height
                     _ => 0,
                 };
                 value.to_le_bytes().to_vec()
