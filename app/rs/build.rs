@@ -1,5 +1,6 @@
 fn main() {
-    println!("cargo:rustc-link-search=native=../src/main/jniLibs/arm64-v8a");
+    // No longer linking against external libOpenglRender.so
+    // The OpenGL renderer is now implemented directly in Rust within this library
     
     // Compile interp.c to add INTERP segment for direct execution
     cc::Build::new()

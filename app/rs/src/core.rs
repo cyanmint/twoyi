@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use crate::input;
-use crate::renderer_bindings;
+use crate::opengl_renderer;
 
 static RENDERER_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -42,20 +42,18 @@ pub fn init_renderer(
         .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         .is_err()
     {
-        unsafe {
-            renderer_bindings::setNativeWindow(window);
-            renderer_bindings::resetSubWindow(
-                window,
-                0,
-                0,
-                surface_width,
-                surface_height,
-                virtual_width,
-                virtual_height,
-                1.0,
-                0.0,
-            );
-        }
+        opengl_renderer::setNativeWindow(window);
+        opengl_renderer::resetSubWindow(
+            window,
+            0,
+            0,
+            surface_width,
+            surface_height,
+            virtual_width,
+            virtual_height,
+            1.0,
+            0.0,
+        );
     } else {
         input::start_input_system(virtual_width, virtual_height);
 
@@ -64,9 +62,7 @@ pub fn init_renderer(
         thread::spawn(move || {
             let window = window_addr as *mut c_void;
             info!("Starting OpenGL renderer with window: {:#?}", window);
-            unsafe {
-                renderer_bindings::startOpenGLRenderer(window, virtual_width, virtual_height, xdpi, ydpi, fps);
-            }
+            opengl_renderer::startOpenGLRenderer(window, virtual_width, virtual_height, xdpi, ydpi, fps);
         });
 
         let working_dir = "/data/data/io.twoyi/rootfs";
@@ -92,24 +88,20 @@ pub fn reset_window(
     fb_width: i32,
     fb_height: i32,
 ) {
-    unsafe {
-        renderer_bindings::resetSubWindow(
-            window,
-            left,
-            top,
-            width,
-            height,
-            fb_width,
-            fb_height,
-            1.0,
-            0.0,
-        );
-    }
+    opengl_renderer::resetSubWindow(
+        window,
+        left,
+        top,
+        width,
+        height,
+        fb_width,
+        fb_height,
+        1.0,
+        0.0,
+    );
 }
 
 /// Remove a window
 pub fn remove_window(window: *mut c_void) {
-    unsafe {
-        renderer_bindings::removeSubWindow(window);
-    }
+    opengl_renderer::removeSubWindow(window);
 }
