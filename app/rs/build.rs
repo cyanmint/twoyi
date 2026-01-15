@@ -1,4 +1,6 @@
 fn main() {
+    // The OpenglRender library is now built via CMake and will be available at runtime
+    // We need to tell the linker where to find it during the build
     println!("cargo:rustc-link-search=native=../src/main/jniLibs/arm64-v8a");
     
     // Compile interp.c to add INTERP segment for direct execution

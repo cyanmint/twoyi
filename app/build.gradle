@@ -29,6 +29,14 @@ android {
         ndk {
             abiFilters "arm64-v8a"
         }
+        
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++14"
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+        
         archivesBaseName = "twoyi_${versionName}"
     }
 
@@ -42,6 +50,13 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+    }
+    
+    externalNativeBuild {
+        cmake {
+            path "native/openglrender/CMakeLists.txt"
+            version "3.10.2"
+        }
     }
 }
 
@@ -59,6 +74,10 @@ task cargoBuild {
 tasks.whenTaskAdded { task ->
     if ((task.name == 'javaPreCompileDebug' || task.name == 'javaPreCompileRelease')) {
         task.dependsOn 'cargoBuild'
+    }
+    // Ensure native build happens before cargo build
+    if (task.name == 'cargoBuild') {
+        task.dependsOn 'externalNativeBuildRelease'
     }
 }
 
