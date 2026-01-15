@@ -92,8 +92,8 @@ This is a foundational implementation. Future enhancements may include:
 
 ## References
 
-- [Anbox QEMU Pipe Connection](https://github.com/Ananbox/anbox/blob/master/src/anbox/qemu/pipe_connection_creator.h)
-- [Anbox Graphics](https://github.com/Ananbox/anbox/tree/master/src/anbox/graphics)
+- [Anbox QEMU Pipe Connection](https://github.com/anbox/anbox/blob/master/src/anbox/qemu/pipe_connection_creator.h)
+- [Anbox Graphics](https://github.com/anbox/anbox/tree/master/src/anbox/graphics)
 
 ## License
 

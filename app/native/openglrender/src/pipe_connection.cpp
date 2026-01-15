@@ -239,12 +239,12 @@ void PipeConnection::handleClient(int socketFd) {
 }
 
 int PipeConnection::identifyClient(const std::string& identifier) {
-    if (identifier.find("pipe:opengles") == 0) {
-        if (identifier.find("pipe:opengles2") == 0) {
-            return OPENGLES2;
-        } else if (identifier.find("pipe:opengles3") == 0) {
-            return OPENGLES3;
-        }
+    // Check for most specific patterns first
+    if (identifier.find("pipe:opengles3") == 0) {
+        return OPENGLES3;
+    } else if (identifier.find("pipe:opengles2") == 0) {
+        return OPENGLES2;
+    } else if (identifier.find("pipe:opengles") == 0) {
         return OPENGLES;
     }
     return INVALID;
