@@ -1,29 +1,27 @@
 # CI/CD Build Configuration
 
-This document describes the CI/CD build configuration for the Twoyi project with the open-source libOpenglRender implementation.
+This document describes the CI/CD build configuration for the Twoyi project with the **pure Rust** OpenGL renderer implementation.
 
 ## Build Requirements
 
 ### Required Tools
 
 1. **JDK 11** - Java Development Kit for Android builds
-2. **Rust toolchain** - For building the Rust native library (libtwoyi.so)
+2. **Rust toolchain** - For building the unified Rust native library (libtwoyi.so)
 3. **cargo-xdk v2.12.6** - Android cross-compilation tool for Rust
-4. **Android NDK r21e** - Native Development Kit for C++ compilation
+4. **Android NDK r21e** - Native Development Kit for Rust compilation
 
 ### Build Dependencies
 
-The build process requires two native libraries to be compiled:
+The build process compiles a single native library:
 
-1. **libOpenglRender.so** - C++ library built with CMake
-   - Built via Gradle's `externalNativeBuild`
-   - Uses EGL and OpenGL ES 2.0
-   - Size: ~51KB (stripped)
-
-2. **libtwoyi.so** - Rust library built with cargo-xdk
-   - Links against libOpenglRender.so
+**libtwoyi.so** - Unified Rust library built with cargo-xdk
+   - Includes JNI interface for Android app
+   - Includes input system
+   - Includes OpenGL renderer (pure Rust implementation)
+   - Includes container integration
    - Built via Gradle's `cargoBuild` task
-   - Size: ~644KB
+   - Size: ~673KB (optimized)
 
 ## Build Process
 
@@ -41,16 +39,15 @@ The build process requires two native libraries to be compiled:
 
 The build happens in this order:
 
-1. **CMake Native Build** (automatic via Gradle)
-   - Task: `externalNativeBuildRelease`
-   - Builds: `libOpenglRender.so`
-   - Output: `app/build/intermediates/cmake/release/obj/arm64-v8a/`
+1. **Gradle Clean** (ensures fresh build)
+   - Task: `clean`
+   - Removes previous build artifacts
 
 2. **Rust Build** (automatic via Gradle)
    - Task: `cargoBuild`
-   - Requires: libOpenglRender.so (from step 1)
-   - Builds: `libtwoyi.so`
+   - Builds: `libtwoyi.so` with integrated OpenGL renderer
    - Output: `app/src/main/jniLibs/arm64-v8a/`
+   - Tool: cargo-xdk
 
 3. **APK Assembly**
    - Task: `assembleRelease`
@@ -61,12 +58,17 @@ The build happens in this order:
 
 The CI verifies:
 - APK file is created
-- All required native libraries are included:
-  - libOpenglRender.so
-  - libtwoyi.so
-  - libadb.so
-  - libloader.so
-  - libc++_shared.so
+- Native library is included:
+  - libtwoyi.so (unified library with OpenGL renderer)
+  - libadb.so (ADB daemon)
+  - libloader.so (loader)
+- All OpenGL renderer functions are exported from libtwoyi.so:
+  - startOpenGLRenderer
+  - setNativeWindow
+  - resetSubWindow
+  - removeSubWindow
+  - destroyOpenGLSubwindow
+  - repaintOpenGLDisplay
 
 ## Local Build
 
@@ -97,18 +99,21 @@ Solution: Install cargo-xdk
 cargo install cargo-xdk --version 2.12.6
 ```
 
-### libOpenglRender.so not found during Rust build
+### Compilation warnings about unsafe blocks
 
-If you see: `ld.lld: error: unable to find library -lOpenglRender`
+The pure Rust implementation should not produce unsafe block warnings. If you see:
+`error: unnecessary 'unsafe' block`
 
-Solution: Ensure CMake build completes first. The Rust build.rs searches for the library in:
-- `../build/intermediates/cmake/release/obj/arm64-v8a/`
-- `../build/intermediates/cxx/RelWithDebInfo/*/obj/arm64-v8a/`
-- `../src/main/jniLibs/arm64-v8a/`
+Solution: The OpenGL renderer functions are now safe Rust functions, not FFI. Remove unnecessary `unsafe` blocks.
 
-### NDK version mismatch
+### Android target not installed
 
-The project requires NDK r21e (21.4.7075529). Gradle will auto-download if not present.
+If you see: `error: the 'aarch64-linux-android' target may not be installed`
+
+Solution: Install the target
+```bash
+rustup target add aarch64-linux-android
+```
 
 ## Caching Strategy
 
@@ -117,23 +122,29 @@ The CI caches:
 2. **Rust toolchain** - Via `actions-rust-lang/setup-rust-toolchain` with `cache: true`
 3. **cargo-xdk binary** - Via `actions/cache` with specific version key
 
-This reduces build time from ~10 minutes to ~2-3 minutes on cache hit.
+This reduces build time from ~10 minutes to ~3-4 minutes on cache hit.
 
 ## Environment Variables
 
-- `ANDROID_NDK_HOME` - Set to NDK installation path
-- `RUSTFLAGS` - Set in `build_rs.sh` for PIE executable configuration
+- `ANDROID_NDK_HOME` - Set to NDK installation path for cargo-xdk
 
 ## Build Outputs
 
 Successful build produces:
 - APK: `app/build/outputs/apk/release/twoyi_*.apk` (~5.5MB)
 - Native libs included in APK:
-  - `lib/arm64-v8a/libOpenglRender.so` (51KB)
-  - `lib/arm64-v8a/libtwoyi.so` (644KB)
+  - `lib/arm64-v8a/libtwoyi.so` (673KB) - **Unified library with OpenGL renderer**
   - `lib/arm64-v8a/libadb.so` (4.3MB)
   - `lib/arm64-v8a/libloader.so` (50KB)
-  - `lib/arm64-v8a/libc++_shared.so` (912KB)
+
+## Architecture Notes
+
+**Pure Rust Implementation**
+- No C/C++ code or compilation required
+- All OpenGL renderer functionality implemented in Rust
+- Single unified native library
+- Simpler build process with fewer dependencies
+- Faster compilation (no CMake step)
 
 ## References
 
