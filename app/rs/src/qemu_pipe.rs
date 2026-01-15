@@ -232,54 +232,57 @@ fn handle_pipe_client(stream: &mut unix_socket::UnixStream) {
 
 /// Handle OpenGL ES service requests for direct connections (no service name exchange)
 fn handle_opengl_service_direct(stream: &mut unix_socket::UnixStream) {
-    debug!("Handling direct OpenGL service connection");
+    info!("Handling direct OpenGL service connection");
     
-    // For direct connections, we don't send an initial success response
-    // Just start processing commands immediately
+    // For direct connections, start processing commands immediately
     handle_opengl_commands(stream);
 }
 
 /// Handle OpenGL ES service requests (after service name negotiation)
 fn handle_opengl_service(stream: &mut unix_socket::UnixStream, service: &str) {
-    debug!("Handling OpenGL service: {}", service);
+    info!("Handling OpenGL service after negotiation: {}", service);
     
     // Send success response (0x00000000) to indicate service is available
     if let Err(e) = stream.write_all(&[0x00, 0x00, 0x00, 0x00]) {
-        warn!("Failed to send success response: {}", e);
+        error!("Failed to send success response: {}", e);
         return;
     }
     
+    info!("Success response sent, starting command loop");
     handle_opengl_commands(stream);
 }
 
 /// Process OpenGL command stream
 fn handle_opengl_commands(stream: &mut unix_socket::UnixStream) {
-    // Now handle OpenGL command stream
+    info!("Starting OpenGL command processing loop");
     let mut buffer = vec![0u8; COMMAND_BUFFER_SIZE];
     
     loop {
         match stream.read(&mut buffer) {
             Ok(0) => {
-                debug!("OpenGL service client disconnected");
+                info!("OpenGL service client disconnected gracefully");
                 break;
             }
             Ok(n) => {
-                debug!("Received {} bytes from OpenGL service", n);
+                info!("Received {} bytes from OpenGL service", n);
                 
                 // Process the command and send response
                 let response = process_opengl_command(&buffer[..n]);
                 
+                info!("Sending {} byte response", response.len());
                 if let Err(e) = stream.write_all(&response) {
-                    warn!("Failed to send response: {}", e);
+                    error!("Failed to send response: {}", e);
                     break;
                 }
+                info!("Response sent successfully");
             }
             Err(e) => {
-                warn!("Error reading from OpenGL service: {}", e);
+                error!("Error reading from OpenGL service: {}", e);
                 break;
             }
         }
     }
+    info!("Exiting OpenGL command processing loop");
 }
 
 /// Process OpenGL command data and return response
