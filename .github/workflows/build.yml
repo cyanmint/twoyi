@@ -38,6 +38,7 @@ jobs:
         with:
           toolchain: stable
           target: aarch64-linux-android
+          cache: true
 
       - name: Cache cargo-xdk
         id: cache-cargo-xdk
@@ -48,14 +49,14 @@ jobs:
 
       - name: Install cargo-xdk
         if: steps.cache-cargo-xdk.outputs.cache-hit != 'true'
-        run: cargo install cargo-xdk
+        run: cargo install cargo-xdk --version 2.12.6
 
       - name: Setup Android NDK
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r27c
-          add-to-path: false
+          ndk-version: r21e
+          add-to-path: true
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -64,6 +65,13 @@ jobs:
         run: ./gradlew assembleRelease
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Verify build outputs
+        run: |
+          echo "Checking build outputs..."
+          ls -lh app/build/outputs/apk/release/*.apk
+          unzip -l app/build/outputs/apk/release/*.apk | grep -E "lib/arm64-v8a/.*\.so"
+          echo "Build verification complete"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
