@@ -18,6 +18,7 @@ use std::thread;
 
 use crate::input;
 use crate::opengl_renderer;
+use crate::qemu_pipe;
 
 static RENDERER_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -56,6 +57,9 @@ pub fn init_renderer(
         );
     } else {
         input::start_input_system(virtual_width, virtual_height);
+        
+        // Start QEMU pipe server for gralloc communication
+        qemu_pipe::start_qemu_pipe_server();
 
         // Convert raw pointer to usize for safe transfer between threads
         let window_addr = window as usize;
