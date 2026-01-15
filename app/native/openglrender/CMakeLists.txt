@@ -34,8 +34,3 @@ target_link_libraries(OpenglRender
     EGL
     GLESv2
 )
-
-# Set library output directory
-set_target_properties(OpenglRender PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../src/main/jniLibs/${ANDROID_ABI}"
-)
