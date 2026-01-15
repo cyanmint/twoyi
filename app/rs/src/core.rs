@@ -42,20 +42,18 @@ pub fn init_renderer(
         .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         .is_err()
     {
-        unsafe {
-            opengl_renderer::setNativeWindow(window);
-            opengl_renderer::resetSubWindow(
-                window,
-                0,
-                0,
-                surface_width,
-                surface_height,
-                virtual_width,
-                virtual_height,
-                1.0,
-                0.0,
-            );
-        }
+        opengl_renderer::setNativeWindow(window);
+        opengl_renderer::resetSubWindow(
+            window,
+            0,
+            0,
+            surface_width,
+            surface_height,
+            virtual_width,
+            virtual_height,
+            1.0,
+            0.0,
+        );
     } else {
         input::start_input_system(virtual_width, virtual_height);
 
@@ -64,9 +62,7 @@ pub fn init_renderer(
         thread::spawn(move || {
             let window = window_addr as *mut c_void;
             info!("Starting OpenGL renderer with window: {:#?}", window);
-            unsafe {
-                opengl_renderer::startOpenGLRenderer(window, virtual_width, virtual_height, xdpi, ydpi, fps);
-            }
+            opengl_renderer::startOpenGLRenderer(window, virtual_width, virtual_height, xdpi, ydpi, fps);
         });
 
         let working_dir = "/data/data/io.twoyi/rootfs";
