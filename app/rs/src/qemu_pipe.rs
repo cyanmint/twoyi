@@ -17,7 +17,7 @@
 
 use log::{debug, info, warn, error};
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::thread;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
@@ -349,7 +349,7 @@ fn process_opengl_command(data: &[u8]) -> Vec<u8> {
                 
                 // Check if buffer exists
                 let buffers = COLOR_BUFFERS.lock().unwrap();
-                let result = if buffers.contains_key(&buffer_id) { 0 } else { 1 };
+                let result: u32 = if buffers.contains_key(&buffer_id) { 0 } else { 1 };
                 result.to_le_bytes().to_vec()
             } else {
                 vec![0x01, 0x00, 0x00, 0x00] // Error
