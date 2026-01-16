@@ -38,7 +38,7 @@ jobs:
         with:
           toolchain: stable
           target: aarch64-linux-android
-          cache: true
+          cache: false
 
       - name: Cache cargo-xdk
         id: cache-cargo-xdk
