@@ -1,6 +1,10 @@
 fn main() {
-    // No longer linking against external libOpenglRender.so
-    // The OpenGL renderer is now implemented directly in Rust within this library
+    // Tell cargo to look for libOpenglRender.so in the jniLibs directory
+    // This is needed for the legacy renderer option that uses static FFI linking
+    let jni_libs_path = std::path::Path::new("../src/main/jniLibs/arm64-v8a");
+    if jni_libs_path.exists() {
+        println!("cargo:rustc-link-search=native={}", jni_libs_path.display());
+    }
     
     // Compile interp.c to add INTERP segment for direct execution
     cc::Build::new()
