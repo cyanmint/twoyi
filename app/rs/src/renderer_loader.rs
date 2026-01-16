@@ -23,6 +23,7 @@ const LEGACY_RENDERER_LIB_PATH: &[u8] = b"/data/data/io.twoyi/lib/libOpenglRende
 
 /// Wrapper for library handle that can be safely sent between threads
 /// The actual dlopen handle is just a pointer address, so we store it as usize
+#[allow(dead_code)]
 struct LibraryHandle(usize);
 
 unsafe impl Send for LibraryHandle {}
@@ -33,6 +34,7 @@ impl LibraryHandle {
         LibraryHandle(ptr as usize)
     }
     
+    #[allow(dead_code)]
     fn as_ptr(&self) -> *mut c_void {
         self.0 as *mut c_void
     }
@@ -60,7 +62,9 @@ pub struct RendererFunctions {
     pub set_native_window: SetNativeWindowFn,
     pub reset_sub_window: ResetSubWindowFn,
     pub remove_sub_window: RemoveSubWindowFn,
+    #[allow(dead_code)]
     pub destroy_opengl_subwindow: DestroyOpenGLSubwindowFn,
+    #[allow(dead_code)]
     pub repaint_opengl_display: RepaintOpenGLDisplayFn,
 }
 
@@ -194,6 +198,7 @@ unsafe fn load_symbol<T>(handle: *mut c_void, name: &[u8]) -> Option<T> {
 }
 
 /// Cleanup function to unload legacy library (call on shutdown)
+#[allow(dead_code)]
 pub fn cleanup_renderer_loader() {
     let mut handle_guard = LEGACY_LIB_HANDLE.lock().unwrap();
     if let Some(handle) = handle_guard.take() {
