@@ -97,6 +97,11 @@
     <string name="settings_key_display_dpi">Display DPI</string>
     <string name="settings_display_dpi_summary">Virtual display DPI (default: 160)</string>
     <string name="settings_display_change_reboot">Display settings will take effect after reboot</string>
+    <string name="settings_key_renderer_type">Renderer Type</string>
+    <string name="settings_renderer_type_summary">Choose between new open-source or legacy renderer (requires reboot)</string>
+    <string name="renderer_type_title">Select Renderer</string>
+    <string name="renderer_new">New Renderer (Open Source)</string>
+    <string name="renderer_legacy">Legacy Renderer (Closed Source)</string>
     <string name="settings_key_select_rom">Select ROM</string>
     <string name="settings_select_rom_summary">Import a ROM file for the active profile</string>
     <string name="settings_key_import_rootfs">Import Rootfs</string>

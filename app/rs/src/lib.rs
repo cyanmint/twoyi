@@ -16,6 +16,7 @@ mod input;
 mod opengl_renderer;
 mod core;
 mod qemu_pipe;
+mod renderer_loader;
 
 // Reference the interp symbol from C to force it to be linked
 extern "C" {
@@ -52,8 +53,13 @@ pub fn renderer_init(
     xdpi: jfloat,
     ydpi: jfloat,
     fps: jint,
+    use_legacy_renderer: jni::sys::jboolean,
 ) {
-    debug!("renderer_init");
+    debug!("renderer_init, use_legacy_renderer: {}", use_legacy_renderer);
+    
+    // Initialize the renderer loader with the selected renderer type
+    renderer_loader::init_renderer_loader(use_legacy_renderer != 0);
+    
     let window = unsafe { ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface) };
 
     let window = match std::ptr::NonNull::new(window) {

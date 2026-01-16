@@ -118,6 +118,7 @@ public class SettingsActivity extends AppCompatActivity {
             Preference displayWidth = findPreference(R.string.settings_key_display_width);
             Preference displayHeight = findPreference(R.string.settings_key_display_height);
             Preference displayDpi = findPreference(R.string.settings_key_display_dpi);
+            Preference rendererType = findPreference(R.string.settings_key_renderer_type);
             Preference selectRom = findPreference(R.string.settings_key_select_rom);
             Preference factoryReset = findPreference(R.string.settings_key_factory_reset);
 
@@ -195,6 +196,38 @@ public class SettingsActivity extends AppCompatActivity {
                     Toast.makeText(getActivity(), "Invalid number", Toast.LENGTH_SHORT).show();
                     return false;
                 }
+            });
+
+            // Initialize renderer type preference
+            String currentRenderer = ProfileSettings.getRendererType(getActivity());
+            String rendererName = ProfileSettings.RENDERER_LEGACY.equals(currentRenderer) 
+                    ? getString(R.string.renderer_legacy) 
+                    : getString(R.string.renderer_new);
+            rendererType.setSummary(getString(R.string.settings_renderer_type_summary) + " (current: " + rendererName + ")");
+            
+            rendererType.setOnPreferenceClickListener(preference -> {
+                Activity activity = getActivity();
+                String[] options = {
+                    getString(R.string.renderer_new),
+                    getString(R.string.renderer_legacy)
+                };
+                int currentSelection = ProfileSettings.isLegacyRendererEnabled(activity) ? 1 : 0;
+                
+                UIHelper.getDialogBuilder(activity)
+                        .setTitle(R.string.renderer_type_title)
+                        .setSingleChoiceItems(options, currentSelection, (dialog, which) -> {
+                            String selectedRenderer = (which == 1) ? ProfileSettings.RENDERER_LEGACY : ProfileSettings.RENDERER_NEW;
+                            ProfileSettings.setRendererType(activity, selectedRenderer);
+                            String newRendererName = (which == 1) 
+                                    ? getString(R.string.renderer_legacy) 
+                                    : getString(R.string.renderer_new);
+                            rendererType.setSummary(getString(R.string.settings_renderer_type_summary) + " (current: " + newRendererName + ")");
+                            Toast.makeText(activity, R.string.settings_display_change_reboot, Toast.LENGTH_SHORT).show();
+                            dialog.dismiss();
+                        })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+                return true;
             });
 
             launchContainer.setOnPreferenceClickListener(preference -> {

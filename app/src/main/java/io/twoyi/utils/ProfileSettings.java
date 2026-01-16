@@ -30,6 +30,11 @@ public class ProfileSettings {
     public static final String DISPLAY_WIDTH = "display_width";
     public static final String DISPLAY_HEIGHT = "display_height";
     public static final String DISPLAY_DPI = "display_dpi";
+    public static final String RENDERER_TYPE = "renderer_type";
+    
+    // Renderer types
+    public static final String RENDERER_NEW = "new";
+    public static final String RENDERER_LEGACY = "legacy";
 
     /**
      * Get SharedPreferences for the active profile
@@ -156,5 +161,26 @@ public class ProfileSettings {
      */
     public static void setDisplayDpi(Context context, int dpi) {
         setInt(context, DISPLAY_DPI, dpi);
+    }
+
+    /**
+     * Get renderer type for active profile (default: "new")
+     */
+    public static String getRendererType(Context context) {
+        return getString(context, RENDERER_TYPE, RENDERER_NEW);
+    }
+
+    /**
+     * Set renderer type for active profile
+     */
+    public static void setRendererType(Context context, String rendererType) {
+        setString(context, RENDERER_TYPE, rendererType);
+    }
+
+    /**
+     * Check if legacy renderer is enabled (default: false, use new renderer)
+     */
+    public static boolean isLegacyRendererEnabled(Context context) {
+        return RENDERER_LEGACY.equals(getRendererType(context));
     }
 }

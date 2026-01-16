@@ -67,6 +67,11 @@
             android:inputType="number" />
 
         <Preference
+            android:key="@string/settings_key_renderer_type"
+            android:summary="@string/settings_renderer_type_summary"
+            android:title="@string/settings_key_renderer_type" />
+
+        <Preference
             android:key="@string/settings_key_select_rom"
             android:summary="@string/settings_select_rom_summary"
             android:title="@string/settings_key_select_rom" />

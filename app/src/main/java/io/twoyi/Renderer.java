@@ -31,7 +31,7 @@ public class Renderer {
         System.loadLibrary("twoyi");
     }
 
-    public static native void init(Surface surface, String loader, int width, int height, float xdpi, float ydpi, int fps);
+    public static native void init(Surface surface, String loader, int width, int height, float xdpi, float ydpi, int fps, boolean useLegacyRenderer);
 
     public static native void resetWindow(Surface surface, int top, int left, int width, int height, int fbWidth, int fbHeight);
 

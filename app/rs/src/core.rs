@@ -17,8 +17,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use crate::input;
-use crate::opengl_renderer;
 use crate::qemu_pipe;
+use crate::renderer_loader;
 
 static RENDERER_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -43,8 +43,9 @@ pub fn init_renderer(
         .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         .is_err()
     {
-        opengl_renderer::setNativeWindow(window);
-        opengl_renderer::resetSubWindow(
+        let funcs = renderer_loader::get_renderer_functions();
+        (funcs.set_native_window)(window);
+        (funcs.reset_sub_window)(
             window,
             0,
             0,
@@ -66,7 +67,8 @@ pub fn init_renderer(
         thread::spawn(move || {
             let window = window_addr as *mut c_void;
             info!("Starting OpenGL renderer with window: {:#?}", window);
-            opengl_renderer::startOpenGLRenderer(window, virtual_width, virtual_height, xdpi, ydpi, fps);
+            let funcs = renderer_loader::get_renderer_functions();
+            (funcs.start_opengl_renderer)(window, virtual_width, virtual_height, xdpi, ydpi, fps);
         });
 
         let working_dir = "/data/data/io.twoyi/rootfs";
@@ -92,7 +94,8 @@ pub fn reset_window(
     fb_width: i32,
     fb_height: i32,
 ) {
-    opengl_renderer::resetSubWindow(
+    let funcs = renderer_loader::get_renderer_functions();
+    (funcs.reset_sub_window)(
         window,
         left,
         top,
@@ -107,5 +110,6 @@ pub fn reset_window(
 
 /// Remove a window
 pub fn remove_window(window: *mut c_void) {
-    opengl_renderer::removeSubWindow(window);
+    let funcs = renderer_loader::get_renderer_functions();
+    (funcs.remove_sub_window)(window);
 }

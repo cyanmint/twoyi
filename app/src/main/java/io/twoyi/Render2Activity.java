@@ -108,7 +108,8 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             float ydpi = displayMetrics.ydpi * scaleY * mVirtualDisplayDpi / displayMetrics.densityDpi;
 
             Renderer.init(surface, RomManager.getLoaderPath(getApplicationContext()), 
-                    mVirtualDisplayWidth, mVirtualDisplayHeight, xdpi, ydpi, (int) getBestFps());
+                    mVirtualDisplayWidth, mVirtualDisplayHeight, xdpi, ydpi, (int) getBestFps(),
+                    ProfileSettings.isLegacyRendererEnabled(getApplicationContext()));
 
             Log.i(TAG, "surfaceCreated with virtual display: " + mVirtualDisplayWidth + "x" + mVirtualDisplayHeight + 
                     " @ " + mVirtualDisplayDpi + " DPI, calculated xdpi=" + xdpi + ", ydpi=" + ydpi);
