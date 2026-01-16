@@ -21,6 +21,23 @@ use std::sync::{Arc, Mutex, Once};
 // Library path constant for legacy renderer
 const LEGACY_RENDERER_LIB_PATH: &[u8] = b"/data/data/io.twoyi/lib/libOpenglRender_legacy.so\0";
 
+/// Wrapper for library handle that can be safely sent between threads
+/// The actual dlopen handle is just a pointer address, so we store it as usize
+struct LibraryHandle(usize);
+
+unsafe impl Send for LibraryHandle {}
+unsafe impl Sync for LibraryHandle {}
+
+impl LibraryHandle {
+    fn new(ptr: *mut c_void) -> Self {
+        LibraryHandle(ptr as usize)
+    }
+    
+    fn as_ptr(&self) -> *mut c_void {
+        self.0 as *mut c_void
+    }
+}
+
 // Function pointer types matching the OpenGL renderer API
 type StartOpenGLRendererFn = extern "C" fn(*mut c_void, i32, i32, i32, i32, i32) -> i32;
 type SetNativeWindowFn = extern "C" fn(*mut c_void) -> i32;
@@ -50,7 +67,7 @@ pub struct RendererFunctions {
 static INIT: Once = Once::new();
 static RENDERER_FUNCTIONS: Mutex<Option<Arc<RendererFunctions>>> = Mutex::new(None);
 // Thread-safe handle to legacy library (protected by Mutex)
-static LEGACY_LIB_HANDLE: Mutex<Option<*mut c_void>> = Mutex::new(None);
+static LEGACY_LIB_HANDLE: Mutex<Option<LibraryHandle>> = Mutex::new(None);
 
 /// Initialize the renderer loader with the specified renderer type
 pub fn init_renderer_loader(use_legacy: bool) {
@@ -122,7 +139,7 @@ fn load_legacy_renderer() -> RendererFunctions {
             return load_new_renderer();
         }
         
-        *LEGACY_LIB_HANDLE.lock().unwrap() = Some(handle);
+        *LEGACY_LIB_HANDLE.lock().unwrap() = Some(LibraryHandle::new(handle));
         
         // Load function pointers
         let start_fn = load_symbol::<StartOpenGLRendererFn>(handle, b"startOpenGLRenderer\0");
@@ -182,7 +199,7 @@ pub fn cleanup_renderer_loader() {
     if let Some(handle) = handle_guard.take() {
         info!("Unloading legacy renderer library");
         unsafe {
-            libc::dlclose(handle);
+            libc::dlclose(handle.as_ptr());
         }
     }
 }
