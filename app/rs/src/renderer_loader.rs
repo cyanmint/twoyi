@@ -4,6 +4,10 @@
 // without any warranty, express or implied, including warranties of merchantability,
 // fitness for a particular purpose, or non-infringement.
 // Use at your own risk.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Dynamic Renderer Loader
 //! 
@@ -12,7 +16,7 @@
 
 use log::{info, warn};
 use std::ffi::c_void;
-use std::sync::{Mutex, Once};
+use std::sync::{Arc, Mutex, Once};
 
 // Function pointer types matching the OpenGL renderer API
 type StartOpenGLRendererFn = extern "C" fn(*mut c_void, i32, i32, i32, i32, i32) -> i32;
@@ -30,6 +34,7 @@ pub enum RendererType {
 }
 
 /// Holds function pointers for the active renderer
+#[derive(Clone)]
 pub struct RendererFunctions {
     pub start_opengl_renderer: StartOpenGLRendererFn,
     pub set_native_window: SetNativeWindowFn,
@@ -40,8 +45,9 @@ pub struct RendererFunctions {
 }
 
 static INIT: Once = Once::new();
-static RENDERER_FUNCTIONS: Mutex<Option<RendererFunctions>> = Mutex::new(None);
-static mut LEGACY_LIB_HANDLE: Option<*mut c_void> = None;
+static RENDERER_FUNCTIONS: Mutex<Option<Arc<RendererFunctions>>> = Mutex::new(None);
+// Thread-safe handle to legacy library (protected by Mutex)
+static LEGACY_LIB_HANDLE: Mutex<Option<*mut c_void>> = Mutex::new(None);
 
 /// Initialize the renderer loader with the specified renderer type
 pub fn init_renderer_loader(use_legacy: bool) {
@@ -59,25 +65,19 @@ pub fn init_renderer_loader(use_legacy: bool) {
             RendererType::Legacy => load_legacy_renderer(),
         };
         
-        *RENDERER_FUNCTIONS.lock().unwrap() = Some(functions);
+        *RENDERER_FUNCTIONS.lock().unwrap() = Some(Arc::new(functions));
     });
 }
 
 /// Get the active renderer functions
-pub fn get_renderer_functions() -> RendererFunctions {
+/// Returns an Arc to avoid copying function pointers on each call
+pub fn get_renderer_functions() -> Arc<RendererFunctions> {
     let guard = RENDERER_FUNCTIONS.lock().unwrap();
     match &*guard {
-        Some(funcs) => RendererFunctions {
-            start_opengl_renderer: funcs.start_opengl_renderer,
-            set_native_window: funcs.set_native_window,
-            reset_sub_window: funcs.reset_sub_window,
-            remove_sub_window: funcs.remove_sub_window,
-            destroy_opengl_subwindow: funcs.destroy_opengl_subwindow,
-            repaint_opengl_display: funcs.repaint_opengl_display,
-        },
+        Some(funcs) => Arc::clone(funcs),
         None => {
             warn!("Renderer not initialized, using new renderer as fallback");
-            load_new_renderer()
+            Arc::new(load_new_renderer())
         }
     }
 }
@@ -117,7 +117,7 @@ fn load_legacy_renderer() -> RendererFunctions {
             return load_new_renderer();
         }
         
-        LEGACY_LIB_HANDLE = Some(handle);
+        *LEGACY_LIB_HANDLE.lock().unwrap() = Some(handle);
         
         // Load function pointers
         let start_fn = load_symbol::<StartOpenGLRendererFn>(handle, b"startOpenGLRenderer\0");
@@ -146,6 +146,12 @@ fn load_legacy_renderer() -> RendererFunctions {
 }
 
 /// Load a symbol from a dynamic library
+/// 
+/// # Safety
+/// This function performs unsafe operations:
+/// - Assumes the symbol has the correct function signature type T
+/// - The caller must ensure T matches the actual symbol's type
+/// - Undefined behavior will occur if there's a type mismatch
 unsafe fn load_symbol<T>(handle: *mut c_void, name: &[u8]) -> Option<T> {
     let sym = libc::dlsym(handle, name.as_ptr() as *const i8);
     if sym.is_null() {
@@ -159,15 +165,18 @@ unsafe fn load_symbol<T>(handle: *mut c_void, name: &[u8]) -> Option<T> {
               std::str::from_utf8(name).unwrap_or("invalid"), error_str);
         None
     } else {
+        // SAFETY: The caller guarantees that T matches the symbol's actual type.
+        // This is ensured by using the correct function pointer type when calling this function.
         Some(std::mem::transmute_copy(&sym))
     }
 }
 
 /// Cleanup function to unload legacy library (call on shutdown)
 pub fn cleanup_renderer_loader() {
-    unsafe {
-        if let Some(handle) = LEGACY_LIB_HANDLE.take() {
-            info!("Unloading legacy renderer library");
+    let mut handle_guard = LEGACY_LIB_HANDLE.lock().unwrap();
+    if let Some(handle) = handle_guard.take() {
+        info!("Unloading legacy renderer library");
+        unsafe {
             libc::dlclose(handle);
         }
     }
