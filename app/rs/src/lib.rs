@@ -185,7 +185,7 @@ unsafe fn JNI_OnLoad(jvm: JavaVM, _reserved: *mut c_void) -> jint {
 
     let class_name: &str = "io/twoyi/Renderer";
     let jni_methods = [
-        jni_method!(init, renderer_init, "(Landroid/view/Surface;Ljava/lang/String;IIFFI)V"),
+        jni_method!(init, renderer_init, "(Landroid/view/Surface;Ljava/lang/String;IIFFIZ)V"),
         jni_method!(
             resetWindow,
             renderer_reset_window,
