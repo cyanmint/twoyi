@@ -17,6 +17,7 @@ mod opengl_renderer;
 mod core;
 mod qemu_pipe;
 mod renderer_loader;
+mod renderer_bindings;
 
 // Reference the interp symbol from C to force it to be linked
 extern "C" {

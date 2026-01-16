@@ -14,31 +14,9 @@
 //! This module provides the ability to switch between the new open-source
 //! Rust renderer and the legacy closed-source renderer at runtime.
 
-use log::{info, warn};
+use log::info;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex, Once};
-
-// Library path constant for legacy renderer
-const LEGACY_RENDERER_LIB_PATH: &[u8] = b"/data/data/io.twoyi/lib/libOpenglRender_legacy.so\0";
-
-/// Wrapper for library handle that can be safely sent between threads
-/// The actual dlopen handle is just a pointer address, so we store it as usize
-#[allow(dead_code)]
-struct LibraryHandle(usize);
-
-unsafe impl Send for LibraryHandle {}
-unsafe impl Sync for LibraryHandle {}
-
-impl LibraryHandle {
-    fn new(ptr: *mut c_void) -> Self {
-        LibraryHandle(ptr as usize)
-    }
-    
-    #[allow(dead_code)]
-    fn as_ptr(&self) -> *mut c_void {
-        self.0 as *mut c_void
-    }
-}
 
 // Function pointer types matching the OpenGL renderer API
 type StartOpenGLRendererFn = extern "C" fn(*mut c_void, i32, i32, i32, i32, i32) -> i32;
@@ -70,8 +48,6 @@ pub struct RendererFunctions {
 
 static INIT: Once = Once::new();
 static RENDERER_FUNCTIONS: Mutex<Option<Arc<RendererFunctions>>> = Mutex::new(None);
-// Thread-safe handle to legacy library (protected by Mutex)
-static LEGACY_LIB_HANDLE: Mutex<Option<LibraryHandle>> = Mutex::new(None);
 
 /// Initialize the renderer loader with the specified renderer type
 pub fn init_renderer_loader(use_legacy: bool) {
@@ -123,88 +99,31 @@ fn load_new_renderer() -> RendererFunctions {
 
 /// Load the legacy closed-source renderer
 fn load_legacy_renderer() -> RendererFunctions {
-    info!("Loading legacy closed-source renderer");
+    info!("Loading legacy closed-source renderer (static linking)");
     
+    // Use static FFI bindings to the legacy renderer library
+    // This works exactly like the original twoyi repository
     unsafe {
-        // Load the legacy library
-        let handle = libc::dlopen(
-            LEGACY_RENDERER_LIB_PATH.as_ptr() as *const u8, 
-            libc::RTLD_NOW | libc::RTLD_LOCAL
-        );
-        
-        if handle.is_null() {
-            let error = libc::dlerror();
-            let error_str = if !error.is_null() {
-                std::ffi::CStr::from_ptr(error).to_string_lossy()
-            } else {
-                "Unknown error".into()
-            };
-            warn!("Failed to load legacy renderer: {}, falling back to new renderer", error_str);
-            return load_new_renderer();
-        }
-        
-        *LEGACY_LIB_HANDLE.lock().unwrap() = Some(LibraryHandle::new(handle));
-        
-        // Load function pointers
-        let start_fn = load_symbol::<StartOpenGLRendererFn>(handle, b"startOpenGLRenderer\0");
-        let set_window_fn = load_symbol::<SetNativeWindowFn>(handle, b"setNativeWindow\0");
-        let reset_fn = load_symbol::<ResetSubWindowFn>(handle, b"resetSubWindow\0");
-        let remove_fn = load_symbol::<RemoveSubWindowFn>(handle, b"removeSubWindow\0");
-        let destroy_fn = load_symbol::<DestroyOpenGLSubwindowFn>(handle, b"destroyOpenGLSubwindow\0");
-        let repaint_fn = load_symbol::<RepaintOpenGLDisplayFn>(handle, b"repaintOpenGLDisplay\0");
-        
-        if let (Some(start), Some(set_win), Some(reset), Some(remove), Some(destroy), Some(repaint)) =
-            (start_fn, set_window_fn, reset_fn, remove_fn, destroy_fn, repaint_fn) {
-            info!("Successfully loaded all legacy renderer functions");
-            RendererFunctions {
-                start_opengl_renderer: start,
-                set_native_window: set_win,
-                reset_sub_window: reset,
-                remove_sub_window: remove,
-                destroy_opengl_subwindow: destroy,
-                repaint_opengl_display: repaint,
-            }
-        } else {
-            warn!("Failed to load some legacy renderer functions, falling back to new renderer");
-            load_new_renderer()
+        RendererFunctions {
+            start_opengl_renderer: std::mem::transmute(
+                crate::renderer_bindings::startOpenGLRenderer as *const ()
+            ),
+            set_native_window: std::mem::transmute(
+                crate::renderer_bindings::setNativeWindow as *const ()
+            ),
+            reset_sub_window: std::mem::transmute(
+                crate::renderer_bindings::resetSubWindow as *const ()
+            ),
+            remove_sub_window: std::mem::transmute(
+                crate::renderer_bindings::removeSubWindow as *const ()
+            ),
+            destroy_opengl_subwindow: std::mem::transmute(
+                crate::renderer_bindings::destroyOpenGLSubwindow as *const ()
+            ),
+            repaint_opengl_display: std::mem::transmute(
+                crate::renderer_bindings::repaintOpenGLDisplay as *const ()
+            ),
         }
     }
 }
 
-/// Load a symbol from a dynamic library
-/// 
-/// # Safety
-/// This function performs unsafe operations:
-/// - Assumes the symbol has the correct function signature type T
-/// - The caller must ensure T matches the actual symbol's type
-/// - Undefined behavior will occur if there's a type mismatch
-unsafe fn load_symbol<T>(handle: *mut c_void, name: &[u8]) -> Option<T> {
-    let sym = libc::dlsym(handle, name.as_ptr() as *const u8);
-    if sym.is_null() {
-        let error = libc::dlerror();
-        let error_str = if !error.is_null() {
-            std::ffi::CStr::from_ptr(error).to_string_lossy()
-        } else {
-            "Unknown error".into()
-        };
-        warn!("Failed to load symbol {}: {}", 
-              std::str::from_utf8(name).unwrap_or("invalid"), error_str);
-        None
-    } else {
-        // SAFETY: The caller guarantees that T matches the symbol's actual type.
-        // This is ensured by using the correct function pointer type when calling this function.
-        Some(std::mem::transmute_copy(&sym))
-    }
-}
-
-/// Cleanup function to unload legacy library (call on shutdown)
-#[allow(dead_code)]
-pub fn cleanup_renderer_loader() {
-    let mut handle_guard = LEGACY_LIB_HANDLE.lock().unwrap();
-    if let Some(handle) = handle_guard.take() {
-        info!("Unloading legacy renderer library");
-        unsafe {
-            libc::dlclose(handle.as_ptr());
-        }
-    }
-}
