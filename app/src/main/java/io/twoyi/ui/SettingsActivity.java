@@ -118,7 +118,7 @@ public class SettingsActivity extends AppCompatActivity {
             Preference displayWidth = findPreference(R.string.settings_key_display_width);
             Preference displayHeight = findPreference(R.string.settings_key_display_height);
             Preference displayDpi = findPreference(R.string.settings_key_display_dpi);
-            Preference rendererType = findPreference(R.string.settings_key_renderer_type);
+            Preference rendererType = findPreference("renderer_type");
             Preference selectRom = findPreference(R.string.settings_key_select_rom);
             Preference factoryReset = findPreference(R.string.settings_key_factory_reset);
 
@@ -222,7 +222,7 @@ public class SettingsActivity extends AppCompatActivity {
                                     ? getString(R.string.renderer_legacy) 
                                     : getString(R.string.renderer_new);
                             rendererType.setSummary(getString(R.string.settings_renderer_type_summary) + " (current: " + newRendererName + ")");
-                            Toast.makeText(activity, R.string.settings_display_change_reboot, Toast.LENGTH_SHORT).show();
+                            Toast.makeText(activity, R.string.settings_renderer_change_reboot, Toast.LENGTH_SHORT).show();
                             dialog.dismiss();
                         })
                         .setNegativeButton(android.R.string.cancel, null)

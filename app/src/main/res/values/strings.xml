@@ -97,6 +97,7 @@
     <string name="settings_key_display_dpi">Display DPI</string>
     <string name="settings_display_dpi_summary">Virtual display DPI (default: 160)</string>
     <string name="settings_display_change_reboot">Display settings will take effect after reboot</string>
+    <string name="settings_renderer_change_reboot">Renderer selection will take effect after reboot</string>
     <string name="settings_key_renderer_type">Renderer Type</string>
     <string name="settings_renderer_type_summary">Choose between new open-source or legacy renderer (requires reboot)</string>
     <string name="renderer_type_title">Select Renderer</string>

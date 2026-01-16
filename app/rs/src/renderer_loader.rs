@@ -18,6 +18,9 @@ use log::{info, warn};
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex, Once};
 
+// Library path constant for legacy renderer
+const LEGACY_RENDERER_LIB_PATH: &[u8] = b"/data/data/io.twoyi/lib/libOpenglRender_legacy.so\0";
+
 // Function pointer types matching the OpenGL renderer API
 type StartOpenGLRendererFn = extern "C" fn(*mut c_void, i32, i32, i32, i32, i32) -> i32;
 type SetNativeWindowFn = extern "C" fn(*mut c_void) -> i32;
@@ -103,8 +106,10 @@ fn load_legacy_renderer() -> RendererFunctions {
     
     unsafe {
         // Load the legacy library
-        let lib_path = b"/data/data/io.twoyi/lib/libOpenglRender_legacy.so\0";
-        let handle = libc::dlopen(lib_path.as_ptr() as *const i8, libc::RTLD_NOW | libc::RTLD_LOCAL);
+        let handle = libc::dlopen(
+            LEGACY_RENDERER_LIB_PATH.as_ptr() as *const i8, 
+            libc::RTLD_NOW | libc::RTLD_LOCAL
+        );
         
         if handle.is_null() {
             let error = libc::dlerror();
