@@ -14,7 +14,7 @@
 //! This module provides the ability to switch between the new open-source
 //! Rust renderer and the legacy closed-source renderer at runtime.
 
-use log::info;
+use log::{info, warn};
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex, Once};
 
