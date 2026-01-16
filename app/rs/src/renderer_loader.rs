@@ -124,7 +124,7 @@ fn load_legacy_renderer() -> RendererFunctions {
     unsafe {
         // Load the legacy library
         let handle = libc::dlopen(
-            LEGACY_RENDERER_LIB_PATH.as_ptr() as *const i8, 
+            LEGACY_RENDERER_LIB_PATH.as_ptr() as *const u8, 
             libc::RTLD_NOW | libc::RTLD_LOCAL
         );
         
@@ -175,7 +175,7 @@ fn load_legacy_renderer() -> RendererFunctions {
 /// - The caller must ensure T matches the actual symbol's type
 /// - Undefined behavior will occur if there's a type mismatch
 unsafe fn load_symbol<T>(handle: *mut c_void, name: &[u8]) -> Option<T> {
-    let sym = libc::dlsym(handle, name.as_ptr() as *const i8);
+    let sym = libc::dlsym(handle, name.as_ptr() as *const u8);
     if sym.is_null() {
         let error = libc::dlerror();
         let error_str = if !error.is_null() {
