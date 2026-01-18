@@ -97,6 +97,11 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             Renderer.setRendererType(useNewRenderer ? 1 : 0);
             Log.i(TAG, "Using " + (useNewRenderer ? "new" : "old") + " renderer");
             
+            // Set debug renderer mode
+            boolean debugRenderer = ProfileSettings.isDebugRendererEnabled(getApplicationContext());
+            Renderer.setDebugRenderer(debugRenderer ? 1 : 0);
+            Log.i(TAG, "Debug renderer: " + (debugRenderer ? "enabled" : "disabled"));
+            
             // Calculate proper DPI based on physical screen and virtual display scaling
             WindowManager windowManager = getWindowManager();
             Display defaultDisplay = windowManager.getDefaultDisplay();

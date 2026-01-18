@@ -34,6 +34,9 @@ pub enum RendererType {
 /// Global renderer type setting
 static RENDERER_TYPE: Lazy<Mutex<RendererType>> = Lazy::new(|| Mutex::new(RendererType::Old));
 
+/// Global debug renderer setting
+static DEBUG_RENDERER: AtomicBool = AtomicBool::new(false);
+
 /// Set the renderer type to use
 pub fn set_renderer_type(use_new_renderer: bool) {
     let mut renderer_type = RENDERER_TYPE.lock().unwrap();
@@ -45,6 +48,22 @@ pub fn set_renderer_type(use_new_renderer: bool) {
     info!("[CORE] ========================================");
     info!("[CORE] Renderer type set to: {:?}", *renderer_type);
     info!("[CORE] ========================================");
+}
+
+/// Set the debug renderer mode
+pub fn set_debug_renderer(debug_enabled: bool) {
+    DEBUG_RENDERER.store(debug_enabled, Ordering::Relaxed);
+    info!("[CORE] ========================================");
+    info!("[CORE] Debug renderer set to: {}", debug_enabled);
+    info!("[CORE] ========================================");
+    
+    // Pass debug flag to the new renderer module
+    renderer_new::set_debug_mode(debug_enabled);
+}
+
+/// Get the current debug renderer mode
+pub fn is_debug_renderer_enabled() -> bool {
+    DEBUG_RENDERER.load(Ordering::Relaxed)
 }
 
 /// Initialize the renderer with the given parameters

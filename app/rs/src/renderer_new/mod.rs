@@ -16,6 +16,11 @@
 //! It also integrates with Android's gralloc system for proper graphics
 //! buffer management.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Global debug mode flag for renderer
+pub static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
+
 pub mod pipe;
 pub mod opengles;
 pub mod gralloc;
@@ -27,3 +32,14 @@ pub use renderer::{
     remove_window,
     set_native_window,
 };
+
+/// Set the debug mode for the renderer
+pub fn set_debug_mode(enabled: bool) {
+    DEBUG_MODE.store(enabled, Ordering::Relaxed);
+    log::info!("[NEW_RENDERER] Debug mode set to: {}", enabled);
+}
+
+/// Check if debug mode is enabled
+pub fn is_debug_mode() -> bool {
+    DEBUG_MODE.load(Ordering::Relaxed)
+}
