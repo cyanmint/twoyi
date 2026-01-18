@@ -76,11 +76,6 @@ pub fn set_debug_log_dir(log_dir: String) {
     renderer_new::set_debug_log_dir(log_dir);
 }
 
-/// Get the current debug renderer mode
-pub fn is_debug_renderer_enabled() -> bool {
-    DEBUG_RENDERER.load(Ordering::Relaxed)
-}
-
 /// Initialize the renderer with the given parameters
 pub fn init_renderer(
     window: *mut c_void,
