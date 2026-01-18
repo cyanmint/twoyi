@@ -46,10 +46,15 @@ The debug renderer works with both old and new renderers, but socket monitoring 
 
 ### 4. Verify Log Files Created
 
-1. Connect device to computer or use file manager
-2. Navigate to `/sdcard/twoyi_renderer_debug/`
-3. ✅ Verify directory exists
-4. ✅ Verify log files are being created:
+The debug logs are in the app's private storage, so you'll need to use the bugreport feature or adb to access them.
+
+#### Method 1: Using Send Log Feature (Recommended)
+1. Go to Settings → Send Log
+2. This creates a bugreport.zip file
+3. Share/save the file
+4. Extract the zip file
+5. ✅ Verify `renderer_debug/` folder exists in the zip
+6. ✅ Verify log files inside:
    - `pipe_*_write.log` - QEMU pipe writes
    - `pipe_*_read.log` - QEMU pipe reads (if any)
    - `opengles_commands.log` - GL commands
@@ -57,12 +62,34 @@ The debug renderer works with both old and new renderers, but socket monitoring 
    - `gralloc_events.log` - Gralloc events
    - `socket_*.log` - Socket monitoring (multiple files)
 
+#### Method 2: Using ADB (Requires Root or Backup)
+```bash
+# Via adb if rooted
+adb shell su -c "ls -la /data/data/io.twoyi/files/twoyi_renderer_debug/"
+
+# Or via backup (non-root)
+adb backup -f twoyi_backup.ab io.twoyi
+# Extract backup and find files/twoyi_renderer_debug/
+```
+
+✅ Verify directory exists and contains log files
+
 ### 5. Verify Log Contents
 
-#### Check QEMU Pipe Logs
+Since logs are in private storage, use the Send Log feature or adb:
+
+#### Via Send Log Feature
+1. Go to Settings → Send Log
+2. Save the bugreport.zip
+3. Extract and examine `renderer_debug/` folder
+4. ✅ Check contents of log files
+
+#### Via ADB (if device is rooted)
 ```bash
-adb shell cat /sdcard/twoyi_renderer_debug/pipe__opengles2_write.log | head -50
+adb shell su -c "cat /data/data/io.twoyi/files/twoyi_renderer_debug/opengles_commands.log" | head -20
 ```
+
+#### Check QEMU Pipe Logs (in bugreport)
 ✅ Should contain:
 - Timestamps in milliseconds
 - "WRITE X bytes" entries
@@ -70,28 +97,21 @@ adb shell cat /sdcard/twoyi_renderer_debug/pipe__opengles2_write.log | head -50
 - ASCII representation: `ASCII: ...`
 - Integer values: `i32: [...]`
 
-#### Check OpenGL ES Commands Log
-```bash
-adb shell cat /sdcard/twoyi_renderer_debug/opengles_commands.log | head -20
-```
+#### Check OpenGL ES Commands Log (in bugreport)
 ✅ Should contain:
 - Initialize command with width, height, DPI, FPS parameters
 - SetWindowSize commands
 - Repaint commands
 - Timestamps
 
-#### Check Gralloc Logs
-```bash
-adb shell cat /sdcard/twoyi_renderer_debug/gralloc_buffers.log | head -20
-```
+#### Check Gralloc Logs (in bugreport)
 ✅ Should contain:
 - BUFFER_LOCK entries
 - Width, height, stride, format values
 
-#### Check Socket Logs
-```bash
-adb shell ls /sdcard/twoyi_renderer_debug/socket_*.log | wc -l
-```
+#### Check Socket Logs (in bugreport)
+In the extracted bugreport.zip, check the `renderer_debug/` folder for socket log files.
+
 ✅ Should show multiple socket log files (those that exist and were connectable)
 
 ### 6. Interact with Container
@@ -100,16 +120,18 @@ adb shell ls /sdcard/twoyi_renderer_debug/socket_*.log | wc -l
    - Touch screen
    - Launch apps
    - Navigate UI
-2. ✅ Verify log files grow in size
-3. ✅ Verify new entries are added with updated timestamps
+2. Generate another bugreport (Settings → Send Log)
+3. ✅ Verify log files have grown in size
+4. ✅ Verify new entries are added with updated timestamps
 
 ### 7. Disable Debug Renderer
 
 1. Go back to Settings → Advanced
 2. Uncheck **Debug Renderer**
 3. Reboot container
-4. ✅ Verify no new log files are created
-5. ✅ Verify existing logs are preserved
+4. Generate a new bugreport
+5. ✅ Verify no `renderer_debug/` folder in new bugreport (or it's empty)
+6. ✅ Verify old logs from previous session are not included
 
 ### 8. Profile-Specific Testing
 
@@ -125,21 +147,28 @@ adb shell ls /sdcard/twoyi_renderer_debug/socket_*.log | wc -l
 - ✅ No debug log files created
 - ✅ No performance impact
 - ✅ Normal container operation
+- ✅ Bugreport does not include renderer_debug folder
 
 ### When Debug Renderer is ON
-- ✅ Log directory `/sdcard/twoyi_renderer_debug/` created
+- ✅ Log directory `<app_files_dir>/files/twoyi_renderer_debug/` created
 - ✅ Multiple log files generated
 - ✅ Log files contain detailed data
-- ✅ Logs grow as container is used
+- ✅ Logs accessible via Send Log feature
+- ✅ Bugreport includes renderer_debug/ folder with all logs
 - ✅ May notice slight performance degradation due to file I/O
 
 ## Common Issues
 
-### No Log Files Created
-- Check if debug mode was actually enabled
+### No renderer_debug Folder in Bugreport
+- Check if debug mode was actually enabled in settings
 - Check logcat for error messages
-- Verify `/sdcard` is writable
+- Verify files directory is writable
 - Try using new renderer (more comprehensive logging)
+
+### Log Files Not Growing
+- Ensure container is actually being used
+- Try interacting with container UI
+- Generate multiple bugreports to compare timestamps
 
 ### Socket Logs Missing
 - Socket monitoring depends on socket availability
@@ -164,9 +193,16 @@ Debug mode has significant performance overhead:
 
 ## Cleanup
 
-To remove all debug logs:
-```bash
-adb shell rm -rf /sdcard/twoyi_renderer_debug/
-```
+Debug logs are in the app's private storage and will be:
+- Automatically cleaned when app data is cleared
+- Included in app backups
+- Removed when app is uninstalled
 
-Or use the device file manager to delete the folder.
+To manually clean logs via Send Log:
+1. The bugreport.zip contains a copy, but doesn't delete originals
+2. Logs accumulate until app data is cleared or debug mode is disabled
+
+For developers with root access:
+```bash
+adb shell su -c "rm -rf /data/data/io.twoyi/files/twoyi_renderer_debug/"
+```

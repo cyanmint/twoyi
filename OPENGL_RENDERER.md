@@ -95,9 +95,14 @@ When debug renderer mode is enabled, the following data is dumped to `/sdcard/tw
 
 ### Log File Location
 
-All debug logs are written to: `/sdcard/twoyi_renderer_debug/`
+All debug logs are written to: `<app_data_dir>/files/twoyi_renderer_debug/`
 
-You can access these files using the built-in file manager or by connecting your device to a computer.
+This is the app's private files directory and is automatically included in the **Send Log** bugreport when debug renderer is enabled.
+
+You can access these logs:
+1. Using the **Send Log** feature in Settings (creates bugreport.zip with logs)
+2. Via `adb` if the device is rooted
+3. Via Android backup/restore mechanisms
 
 ### Performance Impact
 
