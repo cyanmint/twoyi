@@ -25,6 +25,7 @@ pub mod pipe;
 pub mod opengles;
 pub mod gralloc;
 pub mod renderer;
+pub mod socket_monitor;
 
 pub use renderer::{
     start_renderer,
@@ -37,6 +38,12 @@ pub use renderer::{
 pub fn set_debug_mode(enabled: bool) {
     DEBUG_MODE.store(enabled, Ordering::Relaxed);
     log::info!("[NEW_RENDERER] Debug mode set to: {}", enabled);
+    
+    // Start socket monitoring if debug mode is enabled
+    if enabled {
+        log::info!("[NEW_RENDERER] Starting socket monitoring for debug mode");
+        socket_monitor::start_socket_monitoring();
+    }
 }
 
 /// Check if debug mode is enabled
