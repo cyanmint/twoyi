@@ -16,7 +16,7 @@
 //! sockets, and OpenGL ES sockets.
 
 use log::{debug, error, info, warn};
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -82,6 +82,9 @@ pub fn start_socket_monitoring() {
     }
     
     // Spawn monitoring threads for each socket
+    // Note: Threads will naturally terminate when sockets close or fail to connect.
+    // They use timeouts and non-blocking I/O to avoid hanging indefinitely.
+    // The OS will clean up all threads when the process terminates.
     for socket_path in SOCKET_PATHS {
         let path = socket_path.to_string();
         thread::spawn(move || {
