@@ -180,8 +180,8 @@ impl PipeConnection {
             .unwrap()
             .as_millis();
         
-        let log_dir = "/sdcard/twoyi_renderer_debug";
-        let _ = std::fs::create_dir_all(log_dir);
+        let log_dir = super::get_debug_log_dir();
+        let _ = std::fs::create_dir_all(&log_dir);
         
         let service_name = self.service_name.replace("/", "_");
         let log_path = format!("{}/pipe_{}_{}.log", log_dir, service_name, direction);

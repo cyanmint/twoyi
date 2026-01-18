@@ -75,8 +75,8 @@ pub fn start_socket_monitoring() {
     info!("[SOCKET_MONITOR] Starting socket monitoring for debug renderer");
     
     // Create debug log directory
-    let log_dir = "/sdcard/twoyi_renderer_debug";
-    if let Err(e) = std::fs::create_dir_all(log_dir) {
+    let log_dir = super::get_debug_log_dir();
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
         error!("[SOCKET_MONITOR] Failed to create log directory: {}", e);
         return;
     }
@@ -116,7 +116,8 @@ fn monitor_socket(socket_path: &str) {
             }
             
             let socket_name = socket_path.replace("/", "_");
-            let log_path = format!("/sdcard/twoyi_renderer_debug/socket_{}.log", socket_name);
+            let log_dir = super::get_debug_log_dir();
+            let log_path = format!("{}/socket_{}.log", log_dir, socket_name);
             
             // Read and dump data from socket
             let mut buffer = vec![0u8; 4096];

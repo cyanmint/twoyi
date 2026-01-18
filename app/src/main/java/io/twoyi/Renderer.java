@@ -52,4 +52,10 @@ public class Renderer {
      * @param debugEnabled true to enable debug logging, false to disable
      */
     public static native void setDebugRenderer(int debugEnabled);
+    
+    /**
+     * Set debug renderer log directory
+     * @param logDir absolute path to the directory where debug logs should be written
+     */
+    public static native void setDebugLogDir(String logDir);
 }

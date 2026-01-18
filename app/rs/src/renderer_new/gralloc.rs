@@ -199,8 +199,8 @@ impl GrallocManager {
             .unwrap()
             .as_millis();
         
-        let log_dir = "/sdcard/twoyi_renderer_debug";
-        let _ = std::fs::create_dir_all(log_dir);
+        let log_dir = super::get_debug_log_dir();
+        let _ = std::fs::create_dir_all(&log_dir);
         let log_path = format!("{}/gralloc_buffers.log", log_dir);
         
         if let Ok(mut file) = OpenOptions::new()
@@ -224,8 +224,8 @@ impl GrallocManager {
             .unwrap()
             .as_millis();
         
-        let log_dir = "/sdcard/twoyi_renderer_debug";
-        let _ = std::fs::create_dir_all(log_dir);
+        let log_dir = super::get_debug_log_dir();
+        let _ = std::fs::create_dir_all(&log_dir);
         let log_path = format!("{}/gralloc_events.log", log_dir);
         
         if let Ok(mut file) = OpenOptions::new()
