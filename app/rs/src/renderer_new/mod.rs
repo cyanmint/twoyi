@@ -42,7 +42,10 @@ pub use renderer::{
 /// Set the debug mode for the renderer
 pub fn set_debug_mode(enabled: bool) {
     DEBUG_MODE.store(enabled, Ordering::Relaxed);
+    log::info!("[NEW_RENDERER] ========================================");
     log::info!("[NEW_RENDERER] Debug mode set to: {}", enabled);
+    log::info!("[NEW_RENDERER] Current log directory: {}", get_debug_log_dir());
+    log::info!("[NEW_RENDERER] ========================================");
     
     // Start socket monitoring if debug mode is enabled
     if enabled {

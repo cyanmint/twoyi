@@ -181,33 +181,47 @@ impl PipeConnection {
             .as_millis();
         
         let log_dir = super::get_debug_log_dir();
-        let _ = std::fs::create_dir_all(&log_dir);
+        
+        // Create directory and log any errors
+        if let Err(e) = std::fs::create_dir_all(&log_dir) {
+            log::error!("[NEW_RENDERER][PIPE] Failed to create log directory {}: {}", log_dir, e);
+            return;
+        }
         
         let service_name = self.service_name.replace("/", "_");
         let log_path = format!("{}/pipe_{}_{}.log", log_dir, service_name, direction);
         
-        if let Ok(mut file) = OpenOptions::new()
+        log::debug!("[NEW_RENDERER][PIPE] Writing {} bytes to {}", data.len(), log_path);
+        
+        match OpenOptions::new()
             .create(true)
             .append(true)
             .open(&log_path)
         {
-            let _ = writeln!(file, "\n[{}] {} {} bytes:", timestamp, direction.to_uppercase(), data.len());
-            let _ = writeln!(file, "Hex: {:02x?}", data);
-            
-            // Also write as ASCII if printable
-            let ascii: String = data.iter()
-                .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
-                .collect();
-            let _ = writeln!(file, "ASCII: {}", ascii);
-            
-            // Log integers if data is 4-byte aligned
-            if data.len() >= 4 && data.len() % 4 == 0 {
-                let _ = write!(file, "i32: [");
-                for chunk in data.chunks_exact(4) {
-                    let value = i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-                    let _ = write!(file, "{}, ", value);
+            Ok(mut file) => {
+                let _ = writeln!(file, "\n[{}] {} {} bytes:", timestamp, direction.to_uppercase(), data.len());
+                let _ = writeln!(file, "Hex: {:02x?}", data);
+                
+                // Also write as ASCII if printable
+                let ascii: String = data.iter()
+                    .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
+                    .collect();
+                let _ = writeln!(file, "ASCII: {}", ascii);
+                
+                // Log integers if data is 4-byte aligned
+                if data.len() >= 4 && data.len() % 4 == 0 {
+                    let _ = write!(file, "i32: [");
+                    for chunk in data.chunks_exact(4) {
+                        let value = i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                        let _ = write!(file, "{}, ", value);
+                    }
+                    let _ = writeln!(file, "]");
                 }
-                let _ = writeln!(file, "]");
+            }
+            Err(e) => {
+                log::error!("[NEW_RENDERER][PIPE] Failed to open log file {}: {}", log_path, e);
+            }
+        }
             }
         }
     }

@@ -99,12 +99,17 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             
             // Set debug renderer mode and log directory
             boolean debugRenderer = ProfileSettings.isDebugRendererEnabled(getApplicationContext());
-            Renderer.setDebugRenderer(debugRenderer ? 1 : 0);
             if (debugRenderer) {
+                // Set log directory BEFORE enabling debug mode
                 File debugLogDir = new File(getFilesDir(), "twoyi_renderer_debug");
                 Renderer.setDebugLogDir(debugLogDir.getAbsolutePath());
-                Log.i(TAG, "Debug renderer enabled, logs: " + debugLogDir.getAbsolutePath());
+                Log.i(TAG, "Debug renderer log directory: " + debugLogDir.getAbsolutePath());
+                
+                // Now enable debug mode
+                Renderer.setDebugRenderer(1);
+                Log.i(TAG, "Debug renderer: enabled");
             } else {
+                Renderer.setDebugRenderer(0);
                 Log.i(TAG, "Debug renderer: disabled");
             }
             
