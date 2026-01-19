@@ -222,8 +222,6 @@ impl PipeConnection {
                 log::error!("[NEW_RENDERER][PIPE] Failed to open log file {}: {}", log_path, e);
             }
         }
-            }
-        }
     }
 }
 
