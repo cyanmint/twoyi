@@ -16,7 +16,6 @@ mod input;
 mod renderer_bindings;
 mod renderer_new;
 mod core;
-mod openglrenderer_ffi;
 
 // Reference the interp symbol from C to force it to be linked
 extern "C" {
