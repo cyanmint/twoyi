@@ -31,7 +31,7 @@ const RTLD_NOW: c_int = 0x00002;
 const RTLD_LOCAL: c_int = 0x00000;
 const RTLD_GLOBAL: c_int = 0x00100;
 
-// External C functions from libc/libdl
+// External C functions from libdl (dynamic linker)
 extern "C" {
     fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
@@ -174,9 +174,16 @@ pub extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
             
             // Pass remaining arguments to the library's main
             let lib_argc = (args.len() - 1) as c_int;
-            let lib_argv: Vec<*const c_char> = args.iter()
+            
+            // Create CStrings that will live for the duration of the call
+            let lib_args: Vec<CString> = args.iter()
                 .skip(1)
-                .map(|s| s.as_ptr() as *const c_char)
+                .map(|s| CString::new(s.as_str()).unwrap())
+                .collect();
+            
+            // Create pointers from the CStrings
+            let lib_argv: Vec<*const c_char> = lib_args.iter()
+                .map(|s| s.as_ptr())
                 .collect();
             
             let result = main_func(lib_argc, lib_argv.as_ptr());
