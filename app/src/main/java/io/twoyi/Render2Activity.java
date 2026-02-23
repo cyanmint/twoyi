@@ -323,7 +323,11 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             if (true) {
                 boolean success = false;
                 try {
-                    success = TwoyiStatusManager.getInstance().waitBoot(15, TimeUnit.SECONDS);
+                    // Allow extra time for a Zygote crash-and-restart cycle: after a host
+                    // reboot the guest ART often needs one Zygote restart to regenerate a
+                    // stale dalvik-cache (~14 s), followed by a full system_server boot
+                    // (~30 s).  60 s comfortably covers both in sequence.
+                    success = TwoyiStatusManager.getInstance().waitBoot(60, TimeUnit.SECONDS);
                 } catch (Throwable ignored) {
                 }
 

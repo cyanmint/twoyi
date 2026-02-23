@@ -120,10 +120,33 @@ public class Installer {
             if (callback == null) {
                 return;
             }
-            if (out1.isSuccess()) {
+
+            // adb install prints "Success" or "Failure [reason]" to stdout; the exit
+            // code mirrors that, but check stdout explicitly as an additional guard.
+            String installOutMsg = Arrays.toString(out1.getOut().toArray(new String[0]));
+            String installErrMsg = Arrays.toString(out1.getErr().toArray(new String[0]));
+            Log.w(TAG, "out: " + installOutMsg + " err: " + installErrMsg);
+
+            boolean successInStdout = false;
+            boolean failureInStdout = false;
+            for (String line : out1.getOut()) {
+                if (line.trim().equals("Success")) {
+                    successInStdout = true;
+                    break;
+                } else if (line.startsWith("Failure [")) {
+                    failureInStdout = true;
+                    break;
+                }
+            }
+
+            boolean success = (out1.isSuccess() && !failureInStdout) || successInStdout;
+
+            if (success) {
                 callback.onSuccess(files);
             } else {
-                String msg = Arrays.toString(out1.getErr().toArray(new String[0]));
+                // Include both stdout and stderr: stdout carries "Failure [INSTALL_FAILED_*]"
+                // while stderr carries connection / push errors.
+                String msg = installOutMsg + installErrMsg;
                 Log.w(TAG, "msg: " + msg);
 
                 callback.onFail(files, msg);
