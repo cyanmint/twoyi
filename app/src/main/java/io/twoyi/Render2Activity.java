@@ -288,7 +288,14 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             return;
         }
 
-        // ROM exists, boot normally
+        // ROM exists, boot normally.
+        // Clear dalvik-cache if the host build fingerprint changed (e.g. after a host OTA
+        // update), so stale ART OAT entries don't cause "No original dex files found" crashes.
+        // Called synchronously here (UI thread, before addView) to guarantee the cache is
+        // fully cleared before Renderer.init() starts the container.  The existing code
+        // already runs shell commands on the main thread inside attachBaseContext, so the
+        // brief blocking (~100 ms worst-case for rm -rf) is acceptable.
+        RomManager.clearDalvikCacheIfNeeded(this);
         mRootView.addView(mSurfaceView, 0);
         showBootingProcedure();
     }

@@ -74,15 +74,9 @@ public final class RomManager {
 
     public static void ensureBootFiles(Context context) {
 
-        // Kill orphan container processes FIRST so they cannot recreate dalvik-cache
-        // entries after we delete them below.
+        // Kill orphan container processes FIRST so they don't interfere with
+        // directory setup or hold on to stale dalvik-cache entries.
         killOrphanProcess();
-
-        // Clear the guest Android's dalvik-cache on every startup.
-        // Use shell rm -rf: Java's File.delete() silently fails on files owned by
-        // root (container Zygote runs as root), leaving the stale OAT entries that
-        // cause "No original dex files found" crashes on the next boot.
-        clearDalvikCache(context);
 
         // Ensure /data/local/tmp exists with world-writable permissions.
         // twoyi's init.rc omits the mkdir for /data/local/tmp that AOSP includes,
@@ -247,6 +241,33 @@ public final class RomManager {
 
     private static void removeVendorPartition(Context context) {
         removePartition(context, "vendor");
+    }
+
+    private static final String PREF_HOST_FINGERPRINT = "host_build_fingerprint";
+
+    /**
+     * Clears the guest Android's dalvik-cache only when the host build fingerprint
+     * has changed since the last successful clear (i.e. after a host OTA update).
+     *
+     * <p>Background: the container's ART OAT/VDEX files in dalvik-cache are compiled
+     * against the host ART version.  When the host receives an OTA update the ART
+     * version changes, making all existing OAT entries stale.  If the twoyi process
+     * has been alive across the OTA (e.g. Xiaomi "frozen" app resurrection), calling
+     * clearDalvikCache only in attachBaseContext is not enough because that runs just
+     * once per process lifetime.  This method is called synchronously on the UI thread
+     * in bootSystem() before addView(mSurfaceView), so the cache is guaranteed to be
+     * fully cleared before Renderer.init() starts the container.
+     */
+    public static void clearDalvikCacheIfNeeded(Context context) {
+        String currentFingerprint = Build.FINGERPRINT;
+        String lastFingerprint = AppKV.getStringConfig(context, PREF_HOST_FINGERPRINT, "");
+        if (!currentFingerprint.equals(lastFingerprint)) {
+            Log.i(TAG, "Host fingerprint changed (" + lastFingerprint + " → " + currentFingerprint + "), clearing dalvik-cache");
+            clearDalvikCache(context);
+            AppKV.setStringConfig(context, PREF_HOST_FINGERPRINT, currentFingerprint);
+        } else {
+            Log.i(TAG, "Host fingerprint unchanged, skipping dalvik-cache clear");
+        }
     }
 
     private static void clearDalvikCache(Context context) {
