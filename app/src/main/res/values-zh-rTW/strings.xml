@@ -103,6 +103,7 @@
     <string name="settings_export_rootfs_summary">將 rootfs 匯出為 .tar 文件</string>
     <string name="settings_key_profile_manager">配置文件管理器</string>
     <string name="settings_profile_manager_summary">管理不同的配置文件</string>
+    <string name="settings_profile_manager_summary_active">目前設定檔：%1$s</string>
     <string name="profile_manager_title">配置文件管理器</string>
     <string name="profile_create">建立配置文件</string>
     <string name="profile_switch">切換配置文件</string>

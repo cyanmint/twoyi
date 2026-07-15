@@ -7,15 +7,16 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
     <PreferenceCategory android:title="@string/settings_category_basic">
+        <!-- Summary is set at runtime to show the currently active profile. -->
         <Preference
             android:key="@string/settings_key_profile_manager"
             android:summary="@string/settings_profile_manager_summary"
             android:title="@string/settings_key_profile_manager" />
 
         <Preference
-            android:key="@string/settings_key_launch_container"
-            android:summary="@string/settings_launch_container_summary"
-            android:title="@string/settings_key_launch_container" />
+            android:key="@string/settings_key_sendlog"
+            android:summary="@string/settings_sendlog_summary"
+            android:title="@string/settings_key_sendlog" />
 
         <Preference
             android:key="@string/settings_key_import_app"
@@ -28,12 +29,17 @@
             android:title="@string/settings_key_manage_files" />
 
         <Preference
-            android:key="@string/settings_key_shutdown"
-            android:title="@string/settings_key_shutdown" />
+            android:key="@string/settings_key_launch_container"
+            android:summary="@string/settings_launch_container_summary"
+            android:title="@string/settings_key_launch_container" />
 
         <Preference
             android:key="@string/settings_key_reboot"
             android:title="@string/settings_key_reboot" />
+
+        <Preference
+            android:key="@string/settings_key_shutdown"
+            android:title="@string/settings_key_shutdown" />
     </PreferenceCategory>
 
 
@@ -92,11 +98,6 @@
 
 
     <PreferenceCategory android:title="@string/settings_category_other">
-
-        <Preference
-            android:key="@string/settings_key_sendlog"
-            android:summary="@string/settings_sendlog_summary"
-            android:title="@string/settings_key_sendlog" />
 
         <Preference
             android:key="@string/settings_key_donate"

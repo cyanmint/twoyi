@@ -102,6 +102,22 @@ public class SettingsActivity extends AppCompatActivity {
             return findPreference(key);
         }
 
+        /** Shows the currently active profile name as the summary of the profile manager entry. */
+        private void updateActiveProfileSummary(Preference profileManager) {
+            Activity activity = getActivity();
+            if (activity == null || profileManager == null) {
+                return;
+            }
+            String activeProfile = ProfileManager.getActiveProfile(activity);
+            profileManager.setSummary(getString(R.string.settings_profile_manager_summary_active, activeProfile));
+        }
+
+        @Override
+        public void onResume() {
+            super.onResume();
+            updateActiveProfileSummary(findPreference(R.string.settings_key_profile_manager));
+        }
+
         @Override
         public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
             super.onViewCreated(view, savedInstanceState);
@@ -113,7 +129,8 @@ public class SettingsActivity extends AppCompatActivity {
             Preference shutdown = findPreference(R.string.settings_key_shutdown);
             Preference reboot = findPreference(R.string.settings_key_reboot);
             
-            Preference profileManager = findPreference(R.string.settings_key_profile_manager);
+            final Preference profileManager = findPreference(R.string.settings_key_profile_manager);
+            updateActiveProfileSummary(profileManager);
             CheckBoxPreference verboseLogging = (CheckBoxPreference) findPreference(R.string.settings_key_verbose_logging);
             Preference displayWidth = findPreference(R.string.settings_key_display_width);
             Preference displayHeight = findPreference(R.string.settings_key_display_height);
@@ -345,10 +362,9 @@ public class SettingsActivity extends AppCompatActivity {
                 String activeProfile = ProfileManager.getActiveProfile(activity);
                 File profileRootfsDir = ProfileManager.getProfileRootfsDir(activity, activeProfile);
                 
-                // Clear existing rootfs
-                if (profileRootfsDir.exists()) {
-                    io.twoyi.utils.IOUtils.deleteDirectory(profileRootfsDir);
-                }
+                // Do not delete the existing rootfs: tar will overwrite matching files in
+                // place, so any path missing from the imported archive (e.g. /data) is
+                // left untouched instead of being wiped out.
                 profileRootfsDir.mkdirs();
                 
                 File tempFile = new File(activity.getCacheDir(), "rootfs_import.tar");

@@ -450,10 +450,9 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             String activeProfile = ProfileManager.getActiveProfile(this);
             File profileRootfsDir = ProfileManager.getProfileRootfsDir(this, activeProfile);
             
-            // Clear existing rootfs
-            if (profileRootfsDir.exists()) {
-                io.twoyi.utils.IOUtils.deleteDirectory(profileRootfsDir);
-            }
+            // Do not delete the existing rootfs: tar will overwrite matching files in
+            // place, so any path missing from the imported archive (e.g. /data) is
+            // left untouched instead of being wiped out.
             profileRootfsDir.mkdirs();
             
             File tempFile = new File(getCacheDir(), "rootfs_import.tar");
