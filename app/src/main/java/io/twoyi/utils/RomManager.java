@@ -30,8 +30,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.TimeZone;
@@ -356,6 +358,17 @@ public final class RomManager {
     // Encoding equivalence (both instructions are exactly 2 bytes in DEX):
     //   throw  vN  =  0x27  0xNN
     //   const/4 vM, 0  =  0x12  0x0M   (value 0 in the high nibble)
+    //
+    // Scoping the search (important!):
+    //   services.jar bundles every system-server class, so a generic byte
+    //   pattern like "stat failed: " + throw/move-exception can legitimately
+    //   appear in several unrelated methods. Blindly patching the *first*
+    //   match found anywhere in the DEX risks leaving the real bug in
+    //   PackageInstallerSession untouched while corrupting an unrelated
+    //   method. To avoid that, the DEX class/method tables are parsed first
+    //   to resolve PackageInstallerSession.openWriteInternal()'s own
+    //   instruction range, and the byte-pattern search below is restricted
+    //   to that range only.
     // =========================================================================
 
     /**
@@ -459,24 +472,84 @@ public final class RomManager {
      *         was not found or cannot be safely patched.
      */
     private static int applyOpenWriteInternalEnoentPatch(byte[] dex) {
+        // ── Step 0: resolve PackageInstallerSession.openWriteInternal()'s own
+        //   instruction range via the DEX class/method tables, instead of
+        //   scanning the whole (multi-megabyte, multi-class) services.jar DEX.
+        //   "stat failed: " and the throw/move-exception/move-result-object
+        //   opcode sequence used below are generic byte patterns that can
+        //   legitimately occur in dozens of unrelated methods across
+        //   services.jar; matching only the *first* occurrence in the entire
+        //   DEX (as done previously) risks silently patching the wrong method
+        //   – leaving the real ENOENT bug unfixed while corrupting unrelated
+        //   code. Restricting the search to the target method's own bytecode
+        //   eliminates that class of false positives.
+        final String CLASS_DESCRIPTOR = "Lcom/android/server/pm/PackageInstallerSession;";
+        final String METHOD_NAME = "openWriteInternal";
+
+        int classDescId = findStringId(dex, CLASS_DESCRIPTOR);
+        int methodNameId = findStringId(dex, METHOD_NAME);
+        if (classDescId < 0 || methodNameId < 0) {
+            Log.w(TAG, "applyPatch: class/method name strings not found in DEX");
+            return -1;
+        }
+
+        int classTypeId = findTypeIdForDescriptorStringId(dex, classDescId);
+        if (classTypeId < 0) {
+            Log.w(TAG, "applyPatch: type id for " + CLASS_DESCRIPTOR + " not found");
+            return -1;
+        }
+
+        int classDataOff = findClassDataOffset(dex, classTypeId);
+        if (classDataOff <= 0) {
+            Log.w(TAG, "applyPatch: class_data_item for " + CLASS_DESCRIPTOR + " not found");
+            return -1;
+        }
+
+        List<int[]> methodRanges = findMethodInstructionRanges(dex, classDataOff, methodNameId);
+        if (methodRanges.isEmpty()) {
+            Log.w(TAG, "applyPatch: no code for " + METHOD_NAME + "() found");
+            return -1;
+        }
+
+        for (int[] range : methodRanges) {
+            int patched = applyOpenWriteInternalEnoentPatchInRange(dex, range[0], range[1]);
+            if (patched >= 0) {
+                return patched;
+            }
+        }
+        Log.w(TAG, "applyPatch: ENOENT pattern not found inside " + METHOD_NAME + "()");
+        return -1;
+    }
+
+    /**
+     * Runs the byte-pattern search/patch described in {@link
+     * #applyOpenWriteInternalEnoentPatch(byte[])}, restricted to the
+     * instruction range {@code [insnsStart, insnsEnd)} of a single resolved
+     * {@code openWriteInternal} overload.
+     *
+     * <p>Algorithm:
+     * <ol>
+     *   <li>Find string-ID for {@code "stat failed: "} in the DEX string pool.</li>
+     *   <li>Find the {@code const-string vR, "stat failed: "} instruction
+     *       (opcode 0x1a) within the method's instructions.</li>
+     *   <li>Scan backwards to find {@code move-exception} (0x0d) – the entry
+     *       point of the {@code ErrnoException} catch handler.</li>
+     *   <li>Scan further backwards to find {@code move-result-object v_stat}
+     *       (0x0c) – the instruction that captures {@code Os.stat()}'s return
+     *       value and whose register we must set to {@code null}.</li>
+     *   <li>Scan forwards from the {@code const-string} to find the
+     *       {@code throw v_ioe} instruction (0x27).</li>
+     *   <li>Replace {@code 0x27 vN} with {@code 0x12 0x0M} where M is the
+     *       v_stat register index (must be 0–15 for {@code const/4}).</li>
+     * </ol>
+     *
+     * @return the byte offset of the patched instruction, or -1 if the pattern
+     *         was not found or cannot be safely patched within this range.
+     */
+    private static int applyOpenWriteInternalEnoentPatchInRange(byte[] dex, int insnsStart, int insnsEnd) {
         // ── Step 1: find the string ID for "stat failed: " ────────────────────
         final byte[] TARGET = "stat failed: ".getBytes(StandardCharsets.UTF_8);
-        int strIdsSize = readInt32LE(dex, 56);
-        int strIdsOff  = readInt32LE(dex, 60);
-
-        int statFailedId = -1;
-        for (int i = 0; i < strIdsSize; i++) {
-            int dataOff = readInt32LE(dex, strIdsOff + i * 4);
-            if (dataOff < 0 || dataOff + 1 + TARGET.length >= dex.length) continue;
-            int charCount = readUleb128(dex, dataOff);
-            if (charCount != TARGET.length) continue;
-            int headerLen = uleb128Size(charCount);
-            boolean match = true;
-            for (int j = 0; j < TARGET.length; j++) {
-                if (dex[dataOff + headerLen + j] != TARGET[j]) { match = false; break; }
-            }
-            if (match) { statFailedId = i; break; }
-        }
+        int statFailedId = findStringId(dex, new String(TARGET, StandardCharsets.UTF_8));
         if (statFailedId < 0) {
             Log.w(TAG, "applyPatch: string 'stat failed: ' not found in DEX");
             return -1;
@@ -486,28 +559,27 @@ public final class RomManager {
         byte idLo = (byte) (statFailedId & 0xff);
         byte idHi = (byte) ((statFailedId >> 8) & 0xff);
         int csOff = -1;
-        // Start searching after the string-IDs table (string data can't hold code).
-        int codeSearchStart = strIdsOff + strIdsSize * 4;
-        for (int i = codeSearchStart; i < dex.length - 4; i++) {
+        for (int i = insnsStart; i < Math.min(insnsEnd, dex.length - 4); i++) {
             if ((dex[i] & 0xff) == 0x1a && dex[i + 2] == idLo && dex[i + 3] == idHi) {
                 csOff = i;
                 break;
             }
         }
         if (csOff < 0) {
-            Log.w(TAG, "applyPatch: const-string for 'stat failed: ' not found");
+            Log.w(TAG, "applyPatch: const-string for 'stat failed: ' not found in method");
             return -1;
         }
 
         // ── Step 3: find move-exception (0x0d) backwards from csOff ──────────
         //   The ErrnoException catch handler starts with move-exception.
         int meOff = -1;
+        int backLimit = Math.max(insnsStart, csOff - 128);
         // Scan in 2-byte steps (Dalvik code units are 2-byte aligned).
-        for (int i = csOff - 2; i >= Math.max(0, csOff - 128); i -= 2) {
+        for (int i = csOff - 2; i >= backLimit; i -= 2) {
             if ((dex[i] & 0xff) == 0x0d) { meOff = i; break; }
         }
         if (meOff < 0) { // fallback: byte-by-byte
-            for (int i = csOff - 1; i >= Math.max(0, csOff - 128); i--) {
+            for (int i = csOff - 1; i >= backLimit; i--) {
                 if ((dex[i] & 0xff) == 0x0d) { meOff = i; break; }
             }
         }
@@ -520,11 +592,12 @@ public final class RomManager {
         //   This is the instruction that stores Os.stat()'s return value into
         //   v_stat.  It is the last move-result-object before the catch handler.
         int statReg = -1;
-        for (int i = meOff - 2; i >= Math.max(0, meOff - 512); i -= 2) {
+        int meBackLimit = Math.max(insnsStart, meOff - 512);
+        for (int i = meOff - 2; i >= meBackLimit; i -= 2) {
             if ((dex[i] & 0xff) == 0x0c) { statReg = dex[i + 1] & 0xff; break; }
         }
         if (statReg < 0) { // fallback
-            for (int i = meOff - 1; i >= Math.max(0, meOff - 512); i--) {
+            for (int i = meOff - 1; i >= meBackLimit; i--) {
                 if ((dex[i] & 0xff) == 0x0c) { statReg = dex[i + 1] & 0xff; break; }
             }
         }
@@ -543,7 +616,7 @@ public final class RomManager {
         //   invoke-virtual, move-result-object …) then invoke-direct for
         //   IOException.<init> and finally throw v_ioe.
         int throwOff = -1;
-        int limit = Math.min(csOff + 256, dex.length - 2);
+        int limit = Math.min(csOff + 256, Math.min(insnsEnd, dex.length - 2));
         for (int i = csOff + 4; i < limit; i++) {
             if ((dex[i] & 0xff) != 0x27) continue;
             // Extra confidence check: the 6 bytes before should be the
@@ -577,6 +650,139 @@ public final class RomManager {
                 + " (move-exception@0x" + Integer.toHexString(meOff)
                 + ", v_stat=v" + statReg + ")");
         return throwOff;
+    }
+
+    /**
+     * Finds the string-pool index (string_id) whose string data exactly
+     * matches {@code target}, or -1 if not present in the DEX.
+     */
+    private static int findStringId(byte[] dex, String target) {
+        byte[] targetBytes = target.getBytes(StandardCharsets.UTF_8);
+        int strIdsSize = readInt32LE(dex, 56);
+        int strIdsOff = readInt32LE(dex, 60);
+        for (int i = 0; i < strIdsSize; i++) {
+            int dataOff = readInt32LE(dex, strIdsOff + i * 4);
+            if (dataOff < 0 || dataOff + 1 + targetBytes.length >= dex.length) continue;
+            int charCount = readUleb128(dex, dataOff);
+            if (charCount != targetBytes.length) continue;
+            int headerLen = uleb128Size(charCount);
+            boolean match = true;
+            for (int j = 0; j < targetBytes.length; j++) {
+                if (dex[dataOff + headerLen + j] != targetBytes[j]) { match = false; break; }
+            }
+            if (match) return i;
+        }
+        return -1;
+    }
+
+    /**
+     * Finds the type_id index (index into the {@code type_ids} table) whose
+     * descriptor string_id equals {@code descriptorStringId}, or -1 if none.
+     */
+    private static int findTypeIdForDescriptorStringId(byte[] dex, int descriptorStringId) {
+        int typeIdsSize = readInt32LE(dex, 64);
+        int typeIdsOff = readInt32LE(dex, 68);
+        for (int i = 0; i < typeIdsSize; i++) {
+            int descIdx = readInt32LE(dex, typeIdsOff + i * 4);
+            if (descIdx == descriptorStringId) return i;
+        }
+        return -1;
+    }
+
+    /**
+     * Finds the {@code class_data_off} field of the {@code class_def_item}
+     * whose {@code class_idx} equals {@code classTypeId}, or -1 if the class
+     * is not defined in this DEX (e.g. it lives in another DEX of a
+     * multidex JAR) or has no code (class_data_off == 0).
+     */
+    private static int findClassDataOffset(byte[] dex, int classTypeId) {
+        int classDefsSize = readInt32LE(dex, 96);
+        int classDefsOff = readInt32LE(dex, 100);
+        for (int i = 0; i < classDefsSize; i++) {
+            int base = classDefsOff + i * 32;
+            int classIdx = readInt32LE(dex, base);
+            if (classIdx == classTypeId) {
+                return readInt32LE(dex, base + 24); // class_data_off field
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Parses the {@code class_data_item} at {@code classDataOff} and returns
+     * the {@code [insnsStart, insnsEnd)} byte range (within {@code dex}) of
+     * every direct/virtual method whose name matches {@code nameStringId}.
+     * There can be more than one match if the method is overloaded.
+     */
+    private static List<int[]> findMethodInstructionRanges(byte[] dex, int classDataOff, int nameStringId) {
+        List<int[]> ranges = new ArrayList<>();
+        int methodIdsOff = readInt32LE(dex, 92);
+
+        int[] pos = { classDataOff };
+        int staticFieldsSize = readUleb128Adv(dex, pos);
+        int instanceFieldsSize = readUleb128Adv(dex, pos);
+        int directMethodsSize = readUleb128Adv(dex, pos);
+        int virtualMethodsSize = readUleb128Adv(dex, pos);
+
+        for (int i = 0; i < staticFieldsSize; i++) {
+            readUleb128Adv(dex, pos); // field_idx_diff
+            readUleb128Adv(dex, pos); // access_flags
+        }
+        for (int i = 0; i < instanceFieldsSize; i++) {
+            readUleb128Adv(dex, pos); // field_idx_diff
+            readUleb128Adv(dex, pos); // access_flags
+        }
+
+        int methodIdx = 0;
+        for (int i = 0; i < directMethodsSize; i++) {
+            methodIdx += readUleb128Adv(dex, pos); // method_idx_diff
+            readUleb128Adv(dex, pos); // access_flags
+            int codeOff = readUleb128Adv(dex, pos);
+            addMethodRangeIfMatch(dex, methodIdsOff, methodIdx, nameStringId, codeOff, ranges);
+        }
+
+        methodIdx = 0;
+        for (int i = 0; i < virtualMethodsSize; i++) {
+            methodIdx += readUleb128Adv(dex, pos); // method_idx_diff
+            readUleb128Adv(dex, pos); // access_flags
+            int codeOff = readUleb128Adv(dex, pos);
+            addMethodRangeIfMatch(dex, methodIdsOff, methodIdx, nameStringId, codeOff, ranges);
+        }
+
+        return ranges;
+    }
+
+    private static void addMethodRangeIfMatch(byte[] dex, int methodIdsOff, int methodIdx,
+                                               int nameStringId, int codeOff, List<int[]> ranges) {
+        if (codeOff == 0) return; // abstract/native method, no code_item
+        int methodIdBase = methodIdsOff + methodIdx * 8;
+        int nameIdx = readInt32LE(dex, methodIdBase + 4);
+        if (nameIdx != nameStringId) return;
+
+        // code_item: registers_size(2) ins_size(2) outs_size(2) tries_size(2)
+        //            debug_info_off(4) insns_size(4) insns[insns_size]
+        int insnsSize = readInt32LE(dex, codeOff + 12);
+        int insnsStart = codeOff + 16;
+        int insnsEnd = insnsStart + insnsSize * 2;
+        if (insnsEnd > dex.length) return;
+        ranges.add(new int[] { insnsStart, insnsEnd });
+    }
+
+    /**
+     * Reads a ULEB128 value at {@code pos[0]} and advances {@code pos[0]}
+     * past it.
+     */
+    private static int readUleb128Adv(byte[] buf, int[] pos) {
+        int result = 0, shift = 0;
+        int off = pos[0];
+        while (off < buf.length) {
+            int b = buf[off++] & 0xff;
+            result |= (b & 0x7f) << shift;
+            if ((b & 0x80) == 0) break;
+            shift += 7;
+        }
+        pos[0] = off;
+        return result;
     }
 
     /**
