@@ -7,7 +7,7 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
     <PreferenceCategory android:title="@string/settings_category_basic">
-        <!-- Summary is set at runtime to show the currently active profile. -->
+        <!-- Summary is set at runtime in updateActiveProfileSummary() to show the currently active profile. -->
         <Preference
             android:key="@string/settings_key_profile_manager"
             android:summary="@string/settings_profile_manager_summary"

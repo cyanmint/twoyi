@@ -110,6 +110,9 @@ public class SettingsActivity extends AppCompatActivity {
             }
             String activeProfile = ProfileManager.getActiveProfile(activity);
             if (activeProfile == null) {
+                // "default" matches ProfileManager's internal DEFAULT_PROFILE constant,
+                // which is the profile name it falls back to and auto-creates when no
+                // active profile has been set yet.
                 activeProfile = "default";
             }
             profileManager.setSummary(getString(R.string.settings_profile_manager_summary_active, activeProfile));
