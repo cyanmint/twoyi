@@ -359,16 +359,11 @@ public final class RomManager {
     //   throw  vN  =  0x27  0xNN
     //   const/4 vM, 0  =  0x12  0x0M   (value 0 in the high nibble)
     //
-    // Scoping the search (important!):
-    //   services.jar bundles every system-server class, so a generic byte
-    //   pattern like "stat failed: " + throw/move-exception can legitimately
-    //   appear in several unrelated methods. Blindly patching the *first*
-    //   match found anywhere in the DEX risks leaving the real bug in
-    //   PackageInstallerSession untouched while corrupting an unrelated
-    //   method. To avoid that, the DEX class/method tables are parsed first
-    //   to resolve PackageInstallerSession.openWriteInternal()'s own
-    //   instruction range, and the byte-pattern search below is restricted
-    //   to that range only.
+    // Scoping the search (important!): services.jar bundles every
+    // system-server class, so the byte-pattern search below is restricted to
+    // openWriteInternal()'s own instruction range (resolved via the DEX
+    // class/method tables) rather than the whole DEX, to avoid patching an
+    // unrelated method that happens to contain the same generic pattern.
     // =========================================================================
 
     /**
@@ -472,17 +467,9 @@ public final class RomManager {
      *         was not found or cannot be safely patched.
      */
     private static int applyOpenWriteInternalEnoentPatch(byte[] dex) {
-        // ── Step 0: resolve PackageInstallerSession.openWriteInternal()'s own
-        //   instruction range via the DEX class/method tables, instead of
-        //   scanning the whole (multi-megabyte, multi-class) services.jar DEX.
-        //   "stat failed: " and the throw/move-exception/move-result-object
-        //   opcode sequence used below are generic byte patterns that can
-        //   legitimately occur in dozens of unrelated methods across
-        //   services.jar; matching only the *first* occurrence in the entire
-        //   DEX (as done previously) risks silently patching the wrong method
-        //   – leaving the real ENOENT bug unfixed while corrupting unrelated
-        //   code. Restricting the search to the target method's own bytecode
-        //   eliminates that class of false positives.
+        // ── Step 0: resolve openWriteInternal()'s own instruction range via
+        //   the DEX class/method tables, so the byte-pattern search below
+        //   only looks inside that method rather than the whole DEX.
         final String CLASS_DESCRIPTOR = "Lcom/android/server/pm/PackageInstallerSession;";
         final String METHOD_NAME = "openWriteInternal";
 
