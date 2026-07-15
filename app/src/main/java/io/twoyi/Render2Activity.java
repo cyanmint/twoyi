@@ -452,7 +452,11 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
             
             // Do not delete the existing rootfs: tar will overwrite matching files in
             // place, so any path missing from the imported archive (e.g. /data) is
-            // left untouched instead of being wiped out.
+            // left untouched instead of being wiped out. Trade-off: leftover files
+            // from a previous ROM that are not present in the new archive (and are
+            // not under a preserved path like /data) will remain on disk instead of
+            // being removed, which could leave stale/incompatible system files if the
+            // new ROM's layout differs significantly from the old one.
             profileRootfsDir.mkdirs();
             
             File tempFile = new File(getCacheDir(), "rootfs_import.tar");

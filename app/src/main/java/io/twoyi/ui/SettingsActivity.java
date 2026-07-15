@@ -109,6 +109,9 @@ public class SettingsActivity extends AppCompatActivity {
                 return;
             }
             String activeProfile = ProfileManager.getActiveProfile(activity);
+            if (activeProfile == null) {
+                activeProfile = "default";
+            }
             profileManager.setSummary(getString(R.string.settings_profile_manager_summary_active, activeProfile));
         }
 
@@ -364,7 +367,11 @@ public class SettingsActivity extends AppCompatActivity {
                 
                 // Do not delete the existing rootfs: tar will overwrite matching files in
                 // place, so any path missing from the imported archive (e.g. /data) is
-                // left untouched instead of being wiped out.
+                // left untouched instead of being wiped out. Trade-off: leftover files
+                // from a previous ROM that are not present in the new archive (and are
+                // not under a preserved path like /data) will remain on disk instead of
+                // being removed, which could leave stale/incompatible system files if the
+                // new ROM's layout differs significantly from the old one.
                 profileRootfsDir.mkdirs();
                 
                 File tempFile = new File(activity.getCacheDir(), "rootfs_import.tar");
