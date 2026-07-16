@@ -32,7 +32,6 @@ public class ProfileSettings {
     public static final String DISPLAY_DPI = "display_dpi";
     public static final String USE_NEW_RENDERER = "use_new_renderer";
     public static final String DEBUG_RENDERER = "debug_renderer";
-    public static final String ADB_LISTEN_ADDRESS = "adb_listen_address";
 
     /**
      * Get SharedPreferences for the active profile
@@ -187,20 +186,5 @@ public class ProfileSettings {
      */
     public static void setDebugRenderer(Context context, boolean enabled) {
         setBoolean(context, DEBUG_RENDERER, enabled);
-    }
-
-    /**
-     * Get the adb listen address (bind:port, e.g. "127.0.0.1:8555") for the
-     * active profile. Empty string (default) means the feature is disabled.
-     */
-    public static String getAdbListenAddress(Context context) {
-        return getString(context, ADB_LISTEN_ADDRESS, "");
-    }
-
-    /**
-     * Set the adb listen address (bind:port) for the active profile.
-     */
-    public static void setAdbListenAddress(Context context, String address) {
-        setString(context, ADB_LISTEN_ADDRESS, address == null ? "" : address.trim());
     }
 }

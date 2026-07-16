@@ -104,10 +104,14 @@ public class Installer {
 
         String installCommand;
         if (files.size() == 1) {
-            installCommand = String.format(Locale.US, "%s -P %d -s %s install -t -r %s", adbPath, ADB_PORT, connectTarget, fileArgs);
+            // Force --no-streaming: the container's package installer cannot handle
+            // streamed/abb_exec writes, which truncates the APK and fails with
+            // "failed to write; stat failed: ENOENT". Non-streaming pushes the APK
+            // to the guest and invokes the package manager as separate steps.
+            installCommand = String.format(Locale.US, "%s -P %d -s %s install --no-streaming -t -r %s", adbPath, ADB_PORT, connectTarget, fileArgs);
         } else {
             // http://aospxref.com/android-10.0.0_r47/xref/system/core/adb/client/adb_install.cpp#447
-            installCommand = String.format(Locale.US, "%s -P %d -s %s install-multiple -t -r %s", adbPath, ADB_PORT, connectTarget, fileArgs);
+            installCommand = String.format(Locale.US, "%s -P %d -s %s install-multiple --no-streaming -t -r %s", adbPath, ADB_PORT, connectTarget, fileArgs);
         }
 
         Log.w(TAG, "installCommand: " + installCommand);

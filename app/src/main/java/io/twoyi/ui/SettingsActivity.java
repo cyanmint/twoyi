@@ -39,7 +39,6 @@ import java.nio.file.Files;
 import java.util.List;
 
 import io.twoyi.R;
-import io.twoyi.utils.AdbServer;
 import io.twoyi.utils.AppKV;
 import io.twoyi.utils.LogEvents;
 import io.twoyi.utils.ProfileManager;
@@ -119,14 +118,6 @@ public class SettingsActivity extends AppCompatActivity {
             profileManager.setSummary(getString(R.string.settings_profile_manager_summary_active, activeProfile));
         }
 
-        /** Builds the summary shown under the adb listen preference. */
-        private String adbListenSummary(String address) {
-            if (address == null || address.trim().isEmpty()) {
-                return getString(R.string.settings_adb_listen_summary);
-            }
-            return getString(R.string.settings_adb_listen_summary_active, address.trim());
-        }
-
         @Override
         public void onResume() {
             super.onResume();
@@ -152,7 +143,6 @@ public class SettingsActivity extends AppCompatActivity {
             Preference displayDpi = findPreference(R.string.settings_key_display_dpi);
             CheckBoxPreference useNewRenderer = (CheckBoxPreference) findPreference(R.string.settings_key_use_new_renderer);
             CheckBoxPreference debugRenderer = (CheckBoxPreference) findPreference(R.string.settings_key_debug_renderer);
-            Preference adbListen = findPreference(R.string.settings_key_adb_listen);
             Preference selectRom = findPreference(R.string.settings_key_select_rom);
             Preference factoryReset = findPreference(R.string.settings_key_factory_reset);
 
@@ -244,23 +234,6 @@ public class SettingsActivity extends AppCompatActivity {
             debugRenderer.setChecked(ProfileSettings.isDebugRendererEnabled(getActivity()));
             debugRenderer.setOnPreferenceChangeListener((preference, newValue) -> {
                 ProfileSettings.setDebugRenderer(getActivity(), (Boolean) newValue);
-                Toast.makeText(getActivity(), R.string.settings_display_change_reboot, Toast.LENGTH_SHORT).show();
-                return true;
-            });
-
-            // Initialize adb listen address preference with profile-specific value
-            android.preference.EditTextPreference adbListenPref = (android.preference.EditTextPreference) adbListen;
-            String currentAdbListen = ProfileSettings.getAdbListenAddress(getActivity());
-            adbListenPref.setText(currentAdbListen);
-            adbListenPref.setSummary(adbListenSummary(currentAdbListen));
-            adbListenPref.setOnPreferenceChangeListener((preference, newValue) -> {
-                String value = newValue == null ? "" : newValue.toString().trim();
-                if (!value.isEmpty() && AdbServer.toSocketSpec(value) == null) {
-                    Toast.makeText(getActivity(), R.string.settings_adb_listen_invalid, Toast.LENGTH_SHORT).show();
-                    return false;
-                }
-                ProfileSettings.setAdbListenAddress(getActivity(), value);
-                adbListenPref.setSummary(adbListenSummary(value));
                 Toast.makeText(getActivity(), R.string.settings_display_change_reboot, Toast.LENGTH_SHORT).show();
                 return true;
             });
