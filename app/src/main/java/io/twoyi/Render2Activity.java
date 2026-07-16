@@ -356,6 +356,10 @@ public class Render2Activity extends Activity implements View.OnTouchListener {
                 mLoadingView.stopAnimation();
                 mLoadingLayout.setVisibility(View.GONE);
             });
+
+            // Guest adbd is up now; expose it on the user-configured bind:port
+            // (e.g. 127.0.0.1:8555) so external adb clients can reach it.
+            io.twoyi.utils.AdbServer.startIfConfigured(getApplicationContext());
         }, "waiting-boot").start();
     }
 

@@ -102,6 +102,10 @@
     <string name="settings_key_debug_renderer">debug_renderer</string>
     <string name="settings_debug_renderer_title">Debug Renderer</string>
     <string name="settings_debug_renderer_summary">Dump all renderer data to log files (WARNING: produces huge logs, default OFF)</string>
+    <string name="settings_key_adb_listen">ADB Listen Address</string>
+    <string name="settings_adb_listen_summary">Expose the container adb on a bind:port (e.g. 127.0.0.1:8555). Leave empty to disable. Takes effect after reboot.</string>
+    <string name="settings_adb_listen_invalid">Invalid address. Use port or host:port (e.g. 127.0.0.1:8555)</string>
+    <string name="settings_adb_listen_summary_active">Listening on %1$s after reboot</string>
     <string name="settings_key_select_rom">Select ROM</string>
     <string name="settings_select_rom_summary">Import a ROM file for the active profile</string>
     <string name="settings_key_import_rootfs">Import Rootfs</string>
